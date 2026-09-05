@@ -1,0 +1,8 @@
+models_cache/
+jobs/
+uploads/
+__pycache__/
+*.log
+build/
+verify_*.wav
+e2e_*.wav

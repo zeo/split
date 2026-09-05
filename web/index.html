@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Split - Studio-grade stem separation</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="window" role="application" aria-label="Split">
+  <header class="titlebar">
+    <div class="traffic"><span class="t close"></span><span class="t min"></span><span class="t max"></span></div>
+    <div class="brand"><span class="brand-mark">◉</span> Split <span class="brand-sub">studio</span></div>
+    <div class="titlebar-right">
+      <button class="icon-btn" id="theme-btn" title="Toggle light / dark">◐</button>
+      <span class="gpu-pill"><span class="gpu-dot" id="gpu-dot"></span><span id="engine-note">local engine</span></span>
+      <button id="tb-zip" class="icon-btn" title="Download all stems (.zip)" disabled>⤓</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <p class="side-label">Separate</p>
+      <nav id="usecases" class="tasks"></nav>
+
+      <p class="side-label">Quality</p>
+      <div class="tiers" id="quality-seg" role="radiogroup" aria-label="Quality"></div>
+      <p class="side-note" id="preset-desc"></p>
+
+      <p class="side-label">Format</p>
+      <div class="segmented" id="format-seg" role="radiogroup" aria-label="Format"></div>
+
+      <div class="side-foot">
+        <span class="lock">▣</span><span>100% on-device · nothing uploaded</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="hero" id="dropzone" tabindex="0" aria-label="Drop audio file">
+        <div class="hero-top">
+          <div class="hero-icon" id="hero-icon"><span class="eq"><i></i><i></i><i></i><i></i></span></div>
+          <div class="hero-copy">
+            <h1 id="dz-title">Drop audio to separate</h1>
+            <p id="dz-sub">mp3 · wav · flac · ogg · m4a - studio stems in seconds</p>
+          </div>
+          <div class="hero-meta" id="file-meta"></div>
+        </div>
+        <canvas id="hero-wave" class="hero-wave hidden" height="72"></canvas>
+        <input type="file" id="file" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.opus,.aif,.aiff" hidden>
+      </section>
+
+      <section class="panel hidden" id="job-panel">
+        <div class="job-head">
+          <div class="job-meta">
+            <div class="job-name" id="job-name">-</div>
+            <div class="job-sub mono" id="job-sub">-</div>
+          </div>
+          <button id="go" class="cta" disabled><span>Separate stems</span><kbd>↵</kbd></button>
+        </div>
+        <div class="stems-row" id="stem-checks"></div>
+        <details class="adv">
+          <summary>Fine-tune</summary>
+          <div class="adv-grid">
+            <label class="opt">Overlap <input type="range" id="overlap" min="0.1" max="0.75" step="0.05" value="0.25"><span id="overlap-val" class="mono">0.25</span></label>
+            <label class="opt">Ensemble <input type="range" id="shifts" min="0" max="10" step="1" value="0"><span id="shifts-val" class="mono">auto</span></label>
+            <label class="opt check"><input type="checkbox" id="enhanced"><span class="switch"></span> Enhanced quality</label>
+          </div>
+        </details>
+        <!-- Codex-style run transcript: each stage leaves a row -->
+        <div class="runlog hidden" id="progress">
+          <ol class="runsteps" id="stages">
+            <li data-s="upload"><span class="dot"></span><span class="verb">Upload</span><span class="timer mono"></span></li>
+            <li data-s="analyze"><span class="dot"></span><span class="verb">Analyze</span><span class="timer mono"></span></li>
+            <li data-s="separate"><span class="dot"></span><span class="verb">Separate</span><span class="timer mono"></span></li>
+            <li data-s="encode"><span class="dot"></span><span class="verb">Encode</span><span class="timer mono"></span></li>
+          </ol>
+          <div class="pbar"><div id="bar"></div></div>
+          <div class="pmeta"><span id="status-msg" class="mono">Queued</span><span id="pct" class="mono">0%</span></div>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="results">
+        <div class="results-head">
+          <div>
+            <h2>Stems</h2>
+            <p class="results-sub" id="results-sub">Solo / mute to preview the mix</p>
+          </div>
+          <div class="results-btns">
+            <button id="play-all" class="ghost">▶ Play all</button>
+            <button id="dl-all" class="cta small">Download .zip</button>
+            <button id="reset" class="ghost" title="Start over">↺</button>
+          </div>
+        </div>
+        <div id="tracks"></div>
+      </section>
+
+      <section class="stats" id="stats">
+        <div class="stat"><strong>12.98</strong><span>top vocal SDR - beyond last-gen</span></div>
+        <div class="stat"><strong>0 ms</strong><span>cloud round-trip - runs on your GPU</span></div>
+        <div class="stat"><strong>FLAC</strong><span>lossless in, lossless out</span></div>
+      </section>
+      <p class="models-note" id="models-note"></p>
+    </main>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
