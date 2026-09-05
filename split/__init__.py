@@ -1,4 +1,4 @@
-"""Split — local lalal.ai-class stem splitter powered by Demucs."""
+"""Split - local studio-grade stem splitter."""
 from .engine import SeparationEngine, SeparationResult, separate_file
 
 __all__ = ["SeparationEngine", "SeparationResult", "separate_file"]

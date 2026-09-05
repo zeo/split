@@ -1,7 +1,7 @@
 """Unified separation engine: RoFormer/MDX (audio-separator) + Demucs fallback.
 
-Quality ladder vs lalal.ai:
-  vocals SDR — Viperx-1297 12.98 · Kim 12.6 · htdemucs_ft 10.8
+Quality ladder (published vocal SDR):
+  Viperx-1297 12.98 · Kim 12.6 · htdemucs_ft 10.8
 """
 from __future__ import annotations
 
@@ -151,7 +151,7 @@ class SeparationEngine:
             output_format=fmt,
             normalization_threshold=0.9,
             output_single_stem="vocals" if (req.enhanced and "vocals" in model.stems) else None,
-            use_autocast=(device == "cuda"),  # fp16 on CUDA: the speed edge over lalal.ai cloud
+            use_autocast=(device == "cuda"),
             mdx_params={
                 "hop_length": 1024,
                 "segment_size": 256,

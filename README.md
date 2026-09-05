@@ -1,8 +1,8 @@
-# Split - local lalal.ai-class stem splitter
+# Split - local studio-grade stem splitter
 
 Runs 100% on your machine. No uploads, no subscriptions, no file leaving your PC.
 
-**Quality vs lalal.ai:** vocal models are Mel-Band / BS-RoFormer checkpoints
+**Quality:** vocal models are Mel-Band / BS-RoFormer checkpoints
 with published vocal SDR **12.6-12.98** (vs ~10.8 for the previous generation),
 plus **Ultra ensembles** that combine multiple models per track, and an
 **Enhanced mode** (denser overlap + focused single-stem passes). Speed: local

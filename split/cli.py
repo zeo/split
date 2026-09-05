@@ -9,7 +9,7 @@ from .models import MODEL_IDS, TASKS, get_model, resolve_model
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="split", description="Local lalal.ai-class stem splitter")
+    p = argparse.ArgumentParser(prog="split", description="Local studio-grade stem splitter")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("separate", help="Split audio into stems")

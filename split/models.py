@@ -50,7 +50,7 @@ MODELS: list[ModelInfo] = [
         backend="roformer",
         filename="model_bs_roformer_ep_317_sdr_12.9755.ckpt",
         label="BS-RoFormer Viperx-1297 (Best)",
-        description="Top published vocal SDR (12.98). The lalal.ai-beater. Slower.",
+        description="Top published vocal SDR (12.98). Slowest, cleanest.",
         stems=["vocals", "instrumental"],
         quality="best",
         sdr={"vocals": 12.98, "instrumental": 16.5},
@@ -172,7 +172,7 @@ MODELS: list[ModelInfo] = [
 
 MODEL_IDS = [m.id for m in MODELS]
 
-# Sidebar task -> tier -> model id. This is what beats lalal.ai per use case.
+# Sidebar task -> tier -> model id.
 TASK_TIERS: dict[str, dict[str, str]] = {
     "vocals": {"fast": "fast-mdx", "balanced": "kim-vocals", "best": "viperx-1297", "ultra": "vocals-ensemble"},
     "karaoke": {"fast": "fast-mdx", "balanced": "karaoke-becruily", "best": "viperx-1297", "ultra": "karaoke-ensemble"},
