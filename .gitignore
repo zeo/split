@@ -4,5 +4,6 @@ uploads/
 __pycache__/
 *.log
 build/
+dist/
 verify_*.wav
 e2e_*.wav
