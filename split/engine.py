@@ -15,7 +15,16 @@ from pathlib import Path
 from .models import ModelInfo, get_model
 
 OUTPUT_FORMATS = ("mp3", "wav", "flac")
-MODEL_DIR = Path(__file__).resolve().parent.parent / "models_cache"
+
+
+def _default_model_dir() -> Path:
+    import sys
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "models_cache"
+    return Path(__file__).resolve().parent.parent / "models_cache"
+
+
+MODEL_DIR = _default_model_dir()
 
 
 def ffmpeg_bin() -> str:
