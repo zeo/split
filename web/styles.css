@@ -133,7 +133,7 @@ body {
 .icon-btn:hover:not(:disabled) { color: var(--text-1); border-color: var(--border-strong); }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
 
-.layout { display: grid; grid-template-columns: 232px 1fr; min-height: 600px; }
+.layout { display: grid; grid-template-columns: 268px 1fr; min-height: 600px; }
 
 .sidebar {
   border-right: 1px solid var(--border);
@@ -176,9 +176,10 @@ body {
 .task .glyph { display: flex; align-items: center; justify-content: center; color: var(--text-3); }
 .task.on .glyph { color: var(--text-1); }
 .task .glyph svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.task > span:nth-child(2) { min-width: 0; }
 .task strong { display: block; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task small { display: block; color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.task .tier-hint { font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--text-3); letter-spacing: -0.02em; }
+.task .tier-hint { font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--text-3); letter-spacing: -0.02em; white-space: nowrap; text-align: right; }
 
 .tiers {
   display: flex;
@@ -393,7 +394,7 @@ body {
 .runsteps li.failed .dot { border-color: var(--red); background: var(--red); opacity: 1; }
 .pbar { height: 6px; border-radius: 4px; background: var(--inset); overflow: hidden; }
 .pbar > div { height: 100%; width: 0; border-radius: 4px; transition: width 0.3s; background: var(--brand); }
-.pmeta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 8px; font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; letter-spacing: -0.02em; }
+.pmeta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 8px; font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; letter-spacing: -0.02em; white-space: nowrap; text-align: right; }
 .pmeta #pct { color: var(--text-1); font-size: 12.5px; }
 
 .results-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0 0; }
@@ -416,7 +417,7 @@ body {
 .stem-top { display: flex; align-items: center; gap: 10px; }
 .stem-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--stem, var(--brand)); }
 .stem-name { font-weight: 500; text-transform: capitalize; font-size: 13px; }
-.stem-sdr { display: block; font-weight: 400; color: var(--text-3); font-size: 11px; font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; letter-spacing: -0.02em; }
+.stem-sdr { display: block; font-weight: 400; color: var(--text-3); font-size: 11px; font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; letter-spacing: -0.02em; white-space: nowrap; text-align: right; }
 .stem-btns { display: flex; gap: 6px; margin-top: 8px; }
 .mini {
   font-size: 11px;
