@@ -350,10 +350,10 @@ function showResults(job) {
 function showResultsEntry(box, m, stem, url, i) {
   const palette = Object.values(STEM_COLORS);
   const color = STEM_COLORS[stem.toLowerCase()] || STEM_COLORS[stem.toLowerCase().replace(/s$/, "")] || palette[i % palette.length];
-  div.style.setProperty("--stem", color);
   const sdr = m.sdr?.[stem] ?? (stem === "vocals" ? m.sdr?.vocals : null);
   const div = document.createElement("div");
   div.className = "track";
+  div.style.setProperty("--stem", color);
   div.innerHTML = `
     <div>
       <div class="stem-top"><span class="stem-dot" style="background:${color}"></span>

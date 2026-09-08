@@ -18,6 +18,28 @@ OUTPUT_FORMATS = ("mp3", "wav", "flac")
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models_cache"
 
 
+def ffmpeg_bin() -> str:
+    """Resolve ffmpeg: bundled exe next to the app first, then PATH."""
+    import sys
+    candidates = []
+    try:
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+        candidates += [base / "ffmpeg.exe", base / "_internal" / "ffmpeg.exe", base / "bin" / "ffmpeg.exe"]
+    except Exception:
+        pass
+    candidates.append(Path(__file__).resolve().parent.parent / "tools" / "ffmpeg.exe")
+    for c in candidates:
+        try:
+            if c.is_file():
+                return str(c)
+        except OSError:
+            pass
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    raise RuntimeError("ffmpeg not found. Install ffmpeg on PATH, place ffmpeg.exe in tools/, or choose wav output.")
+
+
 @dataclass
 class SeparationRequest:
     input_path: Path
@@ -244,7 +266,7 @@ class SeparationEngine:
                 out[stem] = p
                 continue
             dest = req.output_dir / f"{req.input_path.stem}_{stem}.mp3"
-            cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(p),
+            cmd = [ffmpeg_bin(), "-y", "-v", "error", "-i", str(p),
                    "-codec:a", "libmp3lame", "-b:a", f"{req.mp3_bitrate}k", str(dest)]
             subprocess.run(cmd, check=True)
             out[stem] = dest
@@ -304,7 +326,7 @@ class SeparationEngine:
         if fmt == "wav" and src.suffix == ".wav":
             shutil.copy(src, dest)
             return
-        cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(src)]
+        cmd = [ffmpeg_bin(), "-y", "-v", "error", "-i", str(src)]
         if fmt == "mp3":
             cmd += ["-codec:a", "libmp3lame", "-b:a", f"{mp3_bitrate}k"]
         elif fmt == "flac":

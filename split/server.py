@@ -26,6 +26,50 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 MAX_UPLOAD_MB = 500
 ALLOWED_EXTS = {".mp3", ".wav", ".flac", ".ogg", ".oga", ".m4a", ".aac", ".wma", ".opus", ".aiff", ".aif"}
+JOB_TTL_SEC = 48 * 3600
+MAX_KEPT_JOBS = 20
+
+
+def _ffmpeg_available():
+    return shutil.which("ffmpeg") is not None
+
+
+def _sweep_old_jobs(ttl=JOB_TTL_SEC, keep=MAX_KEPT_JOBS):
+    import time as _t
+    now = _t.time()
+    removed = 0
+    try:
+        dirs = sorted([d for d in JOBS_DIR.iterdir() if d.is_dir()], key=lambda d: d.stat().st_mtime)
+    except FileNotFoundError:
+        return 0
+    for d in dirs:
+        if now - d.stat().st_mtime > ttl:
+            shutil.rmtree(d, ignore_errors=True)
+            for up in UPLOAD_DIR.glob(d.name + ".*"):
+                up.unlink(missing_ok=True)
+            removed += 1
+    try:
+        dirs = sorted([d for d in JOBS_DIR.iterdir() if d.is_dir()], key=lambda d: d.stat().st_mtime)
+    except FileNotFoundError:
+        return removed
+    excess = len(dirs) - keep
+    if excess > 0:
+        for d in dirs[:excess]:
+            shutil.rmtree(d, ignore_errors=True)
+            for up in UPLOAD_DIR.glob(d.name + ".*"):
+                up.unlink(missing_ok=True)
+            removed += 1
+    for up in UPLOAD_DIR.iterdir():
+        try:
+            if now - up.stat().st_mtime > ttl and not (JOBS_DIR / up.stem).exists():
+                up.unlink(missing_ok=True)
+                removed += 1
+        except FileNotFoundError:
+            pass
+    return removed
+
+
+_sweep_old_jobs()
 
 TIERS = ("fast", "balanced", "best", "ultra")
 
@@ -104,6 +148,8 @@ async def create_job(
         raise HTTPException(400, f"Unsupported file type {ext!r}. Use mp3/wav/flac/ogg/m4a.")
     if output_format not in OUTPUT_FORMATS:
         raise HTTPException(400, f"Bad format {output_format!r}")
+    if output_format in ("mp3", "flac") and not _ffmpeg_available():
+        raise HTTPException(500, "ffmpeg is required for mp3/flac encoding but was not found on PATH. Install ffmpeg or choose wav output.")
     if task not in TASKS:
         raise HTTPException(400, f"Unknown task {task!r}")
     if tier not in TIERS:

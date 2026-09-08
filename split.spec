@@ -21,10 +21,29 @@ for _base in [pathlib.Path(__import__("sys").prefix) / "Lib" / "site-packages",
         _AS_DIST = _cand
         break
 
+import shutil as _shutil
+# Bundle ffmpeg.exe into the exe so end-user machines need no PATH setup.
+# Build machine resolves it via PATH; falls back to the WinGet Gyan package dir.
+_FFMPEG_CANDIDATES = [p for p in [(_shutil.which("ffmpeg") or "")] if p]
+_FFMPEG_CANDIDATES += list(pathlib.Path("tools").glob("ffmpeg*.exe"))
+try:
+    _FFMPEG_CANDIDATES += sorted(pathlib.Path.home().glob(
+        "AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_*/ffmpeg-*-full_build/bin/ffmpeg.exe"))
+except Exception:
+    pass
+def _real(p):
+    try:
+        r = pathlib.Path(str(p)).resolve()
+        return str(r) if r.is_file() else None
+    except Exception:
+        return None
+FFMPEG_EXE = next((r for r in (_real(p) for p in _FFMPEG_CANDIDATES) if r), None)
+
+
 a = Analysis(
     ["split_gui.py"],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=[(FFMPEG_EXE, ".")] if FFMPEG_EXE else [],
     datas=[
         (str(ROOT / "web"), "web"),
         (str(ROOT / "README.md"), "."),

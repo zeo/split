@@ -83,3 +83,5 @@ dist/Split/Split.exe   (built desktop app)
   get legal review before commercial redistribution.
 - Orchestral/cinematic splitting has no dedicated open model; use Full band
   and keep the `other` stem.
+- ffmpeg is bundled into dist/Split/Split.exe at build time (see split.spec); running from source needs ffmpeg on PATH for mp3/flac output (wav always works).
+- jobs/ and uploads/ are swept on server startup: entries older than 48 h are deleted, max 20 recent jobs kept. DELETE /api/jobs/{id} removes one immediately.
