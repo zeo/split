@@ -58,8 +58,8 @@ You need Python 3.13 and FFmpeg on your PATH. The lockfile pulls CUDA 13.0 build
   - Its per-stem peak normalization is off, so stems sum back to the mix.
   - Rotary embeddings run in half precision with cached angles.
   - Flash attention is enabled on every card that supports it. Together these make inference 2.5x to 3.5x faster than float32, with vocal stems within 48 to 53 dB SNR of the float32 output.
-- Input is decoded once by FFmpeg to 44.1 kHz float. Output goes back to the source's own sample rate and channel count.
-- The window is [pywebview](https://pywebview.flowrl.com) on WebView2, talking to a loopback FastAPI server that accepts only local hosts and a per-launch token. Playback decodes every stem into Web Audio buffers that start on one clock, so soloing two stems never drifts.
+- Input is decoded once by FFmpeg to 44.1 kHz float. Output goes back to the source's own sample rate and channel count. If any stem would clip, all of them get the same trim, so they keep summing to the mix.
+- The window is [pywebview](https://pywebview.flowrl.com) on WebView2, talking to a loopback FastAPI server that accepts only local hosts and a per-launch token. Playback decodes every stem into Web Audio buffers that start on one clock, so soloing two stems never drifts. The title bar is drawn by the page, but dragging and resizing hand off to Windows, so snap and maximize behave like any other window.
 
 Settings, models and finished jobs live in `%LOCALAPPDATA%\Split` on Windows, `~/Library/Application Support/Split` on macOS and `~/.local/share/split` on Linux. Set `SPLIT_HOME` to move them.
 

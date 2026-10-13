@@ -21,16 +21,19 @@ A rewrite. The old build could not run its band tasks once frozen, and its model
 - separation runs in its own process: one job at a time, cancel frees the GPU, a crash fails the job instead of the app
 - stems now sum back to the mix; audio-separator's per-stem peak normalization is off
 - output keeps the source's sample rate and channel count, at 24-bit for WAV and FLAC
+- when any stem would clip, every stem gets the same small trim, so none clips and they still sum to the mix; the session shows the trim
 - RoFormer inference is 2.5x to 3.5x faster than float32 on an RTX 4070 Ti; vocal stems match the float32 output to 48 to 53 dB SNR
 - GPUs without kernels in the bundled torch build fall back to the CPU with a note instead of failing
 - jobs persist on disk and survive a restart; finished jobs are kept for 7 days, up to 40
 
 ### app
-- native window instead of a console plus browser tab, with drag and drop, file and folder pickers, export and show-in-Explorer
+- native window instead of a console plus browser tab, with its own title bar, drag and drop, file and folder pickers, export and show-in-Explorer; moving and resizing still go through Windows, so snap works
 - a second launch focuses the running window and hands it the files
-- arrangement view: one lane per stem with solo, mute, gain, level meter and save, all on one sample clock
+- arrangement view: one lane per stem with solo, mute, gain, an LED meter and save, a time ruler, and played audio lit while the rest stays dim, all on one sample clock
 - queue with live progress, time left, cancel, retry and remove
 - models sheet with license, source, size and download state for every checkpoint
+- MK II, the new house style: lettered settings modules, a spec plate with the published score and download size, and a wired signal path for the chosen task; the earlier graphite and brass finish stays under Look as Brass
+- `#job=`, `#task=`, `#style=` and `#theme=` in the url open a view directly
 - the local API refuses other hosts and requires a per-launch token for anything that writes
 
 ### packaging
