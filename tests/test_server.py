@@ -154,3 +154,16 @@ def test_safe_name_strips_path_characters():
     assert safe_name('a/b\\c:d*e?"f<g>h|') == "a b c d e f g h"
     assert safe_name("   ") == "audio"
     assert len(safe_name("x" * 400)) == 120
+
+
+def test_web_assets_are_clean_utf8():
+    from split import paths
+
+    for asset in paths.web_dir().glob("*.*"):
+        if asset.suffix in {".js", ".css", ".html"}:
+            text = asset.read_bytes().decode("utf-8")
+            assert "Â" not in text and "â€" not in text, f"mojibake in {asset.name}"
+
+
+def test_ui_assets_are_revalidated(client):
+    assert client.get("/app.js").headers["cache-control"] == "no-cache"

@@ -380,8 +380,26 @@ def _emitter(outbox, key: str) -> Emit:
     return emit
 
 
+def _exit_with_parent() -> None:
+    # a parent that dies hard (crash, task kill) never sends the stop message; without this
+    # the worker would idle forever holding a CUDA context
+    import multiprocessing
+    import threading
+
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+
+    def watch() -> None:
+        parent.join()
+        os._exit(0)
+
+    threading.Thread(target=watch, name="split-parent-watch", daemon=True).start()
+
+
 def worker_main(inbox, outbox) -> None:
     """Serve separation and download requests one at a time until told to stop."""
+    _exit_with_parent()
     paths.log_to_file_if_headless("worker")
     paths.expose_ffmpeg()
     logging.basicConfig(level=logging.WARNING)

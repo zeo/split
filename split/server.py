@@ -318,8 +318,16 @@ def create_app(jobs: Jobs | None = None, token: str | None = None) -> FastAPI:
         weights.remove(model)
         return {"deleted": model_id}
 
-    app.mount("/", StaticFiles(directory=paths.web_dir()), name="web")
+    app.mount("/", FreshStaticFiles(directory=paths.web_dir()), name="web")
     return app
+
+
+class FreshStaticFiles(StaticFiles):
+    # the webview keeps its http cache across launches; revalidate so an update never runs stale ui code
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def serve(host: str = "127.0.0.1", port: int = 8000, token: str | None = None) -> None:
