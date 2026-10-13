@@ -1,475 +1,833 @@
-/* Split stem studio. git+ design language: flat surfaces, embossed pills,
-   mono machine text, run transcript stages, state dots. */
+import { api, native, subscribe, whenNative } from "./api.js";
+import { drawWave, formatTime } from "./lanes.js";
+import { Mixer } from "./mixer.js";
+
 const $ = (id) => document.getElementById(id);
-let TASKS = {}, MODELS = [], TIERS = ["fast", "balanced", "best", "ultra"];
-let task = "vocals", tier = "balanced", format = "mp3";
-let chosenFile = null, jobId = null, pollTimer = null;
-let stemState = {}; // stem -> {url, audio, solo, mute, vol, peaks, canvas, color}
 
-const TIER_LABEL = {
-  fast: "Fast preview · seconds per track",
-  balanced: "Balanced · quality/speed sweet spot",
-  best: "Best · SOTA checkpoints, slower",
-  ultra: "Ultra · multi-model ensembles, slowest",
+const STEM_COLORS = {
+  vocals: "#d9b45a", instrumental: "#6f9fca", lead: "#e3a35c", backing: "#87b1a1",
+  drums: "#d9654a", bass: "#5c8fd8", other: "#99a877", guitar: "#c58bd0", piano: "#cdb791",
+  kick: "#d9654a", snare: "#e39a48", toms: "#ad7bd3", hihat: "#79b9c1", cymbals: "#cbc068",
+  dry: "#8dc1a8", reverb: "#7d8ed3", clean: "#8dc1a8", noise: "#ad9080", crowd: "#c98a69",
 };
-const STEM_COLORS = { vocals: "#30a742", drums: "#3b82f6", bass: "#8250df", guitar: "#0e9f8a", piano: "#d29922", kick: "#3b82f6", snare: "#e5484d", instrumental: "#30a742" };
-const TASK_ICON = {
-  vocals: '<path d="M17 7V11C17 13.7614 14.7614 16 12 16C9.23858 16 7 13.7614 7 11V7C7 4.23858 9.23858 2 12 2C14.7614 2 17 4.23858 17 7Z"/><path d="M17 7H14M17 11H14"/><path d="M20 11C20 15.4183 16.4183 19 12 19M12 19C7.58172 19 4 15.4183 4 11M12 19V22M12 22H15M12 22H9"/>',
-  karaoke: '<circle cx="6.5" cy="18.5" r="3.5"/><circle cx="18" cy="16" r="3"/><path d="M10 18.5L10 7C10 6.07655 10 5.61483 10.2635 5.32794C10.5269 5.04106 11.0175 4.9992 11.9986 4.91549C16.022 4.57222 18.909 3.26005 20.3553 2.40978C20.6508 2.236 20.7986 2.14912 20.8993 2.20672C21 2.26432 21 2.4315 21 2.76587V16"/><path d="M10 10C15.8667 10 19.7778 7.66667 21 7"/>',
-  band: '<path d="M9 3V21"/><path d="M6 7V17"/><path d="M12 6V18"/><path d="M15 9L15 15"/><path d="M18 7L18 17"/><path d="M21 11L21 13"/><path d="M3 11L3 13"/>',
-  band6: '<path d="M11.5505 12.447L11.1881 12.8094L18.4362 5.5625M6.83923 15.7079L8.28885 17.1574M11.9129 13.5341C11.5126 13.9344 10.8636 13.9344 10.4633 13.5341C10.063 13.1338 10.063 12.4849 10.4633 12.0846C10.8636 11.6843 11.5126 11.6843 11.9129 12.0846C12.3132 12.4849 12.3132 13.1338 11.9129 13.5341ZM14.8122 9.18631C17.7114 12.0853 17.5172 13.3406 16.9866 14.2595C16.6863 14.7797 16.0853 15.2894 15.1176 15.6714C14.3091 15.9906 13.6733 16.6521 13.4915 17.5019C13.2667 18.5521 12.8333 19.862 11.9129 20.7823C10.1009 22.5941 7.92649 22.5941 4.66485 19.3328C1.40321 16.0714 1.40321 13.8972 3.21524 12.0853C4.13562 11.165 5.44559 10.7316 6.49584 10.5069C7.3458 10.3251 8.00733 9.6893 8.32652 8.88091C8.70857 7.91334 9.21833 7.31237 9.73852 7.01207C10.6575 6.48152 11.9129 6.28732 14.8122 9.18631Z"/><path d="M21.5193 4.48223L20.5193 5.48223C20.4115 5.59007 20.3576 5.64399 20.3075 5.68469C19.8483 6.05773 19.1904 6.05773 18.7312 5.68469C18.6811 5.64399 18.6272 5.59006 18.5193 5.48223C18.4115 5.3744 18.3576 5.32048 18.3169 5.27038C17.9438 4.81116 17.9438 4.15331 18.3169 3.69409C18.3576 3.64399 18.4115 3.59007 18.5193 3.48223L19.5193 2.48223C19.6272 2.3744 19.6811 2.32048 19.7312 2.27978C20.1904 1.90674 20.8483 1.90674 21.3075 2.27978C21.3576 2.32048 21.4115 2.3744 21.5193 2.48223C21.6272 2.59006 21.6811 2.64399 21.7218 2.69409C22.0948 3.15331 22.0948 3.81116 21.7218 4.27038C21.6811 4.32048 21.6272 4.3744 21.5193 4.48223Z"/>',
-  drums: '<ellipse cx="12" cy="8.00195" rx="9" ry="5"/><path d="M21 8.00195V17.002C21 19.7634 16.9706 22.002 12 22.002C7.02944 22.002 3 19.7634 3 17.002V8.00195"/><path d="M8 13.002V21.002"/><path d="M16 13.002V21.002"/><path d="M15 8.00195L21 2.00195"/><path d="M9 8.00195L3 2.00195"/>',
-  cleanup: '<path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/>',
+const FORMAT_NOTES = {
+  wav: "24-bit PCM at the source sample rate",
+  flac: "24-bit lossless at the source sample rate",
+  mp3: "320 kbps, for sharing rather than mixing",
 };
-function icon(name) {
-  return `<svg viewBox="0 0 24 24" aria-hidden="true">${TASK_ICON[name] || TASK_ICON.vocals}</svg>`;
-}
+const STATUS_TEXT = { queued: "Waiting", cancelled: "Cancelled", done: "Done" };
+const colorOf = (stem) => STEM_COLORS[stem] ?? "#9aa5ab";
+const megabytes = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 
-/* ---------- boot ---------- */
-function initTheme() {
-  const saved = localStorage.getItem("split_theme");
-  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  document.documentElement.dataset.theme = saved || "dark";
-}
-$("theme-btn").onclick = () => {
-  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  localStorage.setItem("split_theme", next);
-  for (const st of Object.values(stemState)) paintStem(st, 0);
-  if (chosenFile && !jobId) drawHeroPreview(chosenFile);
+const saved = JSON.parse(localStorage.getItem("split.settings") || "{}");
+const state = {
+  catalog: null,
+  task: saved.task ?? "vocals",
+  tiers: saved.tiers ?? {},
+  stems: saved.stems ?? {},
+  isolate: saved.isolate ?? {},
+  format: saved.format ?? "wav",
+  staged: [],
+  snapshot: { jobs: [], downloads: {}, opened: { seq: 0 } },
+  selected: null,
+  openedSeq: null,
+  session: null,
 };
+const mixer = new Mixer({ onEnded: () => renderTransport() });
 
-async function boot() {
-  initTheme();
-  try {
-    const data = await (await fetch("/api/models")).json();
-    TASKS = data.tasks || {};
-    MODELS = data.models || [];
-    if (data.tiers?.length) TIERS = data.tiers;
-    renderTasks();
-    const dev = data.device || "cpu";
-    $("gpu-dot").style.background = dev === "cpu" ? "#8a8a8a" : "var(--ok)";
-    $("engine-note").textContent = `local ${dev.toUpperCase()} · private`;
-    const best = MODELS.filter((m) => m.quality === "best" && (m.sdr?.vocals || 0) >= 11)
-      .map((m) => `${m.label} (vocal SDR ${m.sdr.vocals})`).join(" · ");
-    if (best) $("models-note").textContent = `${best} · runs on your GPU, nothing uploaded`;
-  } catch { renderTasks(); }
-  renderTiers();
-  renderFormats();
-  refreshModelNote();
+function persist() {
+  const { task, tiers, stems, isolate, format } = state;
+  localStorage.setItem("split.settings", JSON.stringify({ task, tiers, stems, isolate, format }));
 }
 
-function modelFor(t, q) {
-  const wantStems = { vocals: 2, karaoke: 2, band: 4, band6: 6, drums: 6, cleanup: 2 }[t] || 2;
-  const pool = MODELS.filter((m) => m.stems.length === wantStems);
-  const pick = (pool.length ? pool : MODELS).filter((m) => m.quality === q);
-  return pick[0] || pool[0] || MODELS[0] || {};
+const currentTask = () => state.catalog.tasks.find((t) => t.id === state.task) ?? state.catalog.tasks[0];
+const currentTier = (task = currentTask()) => {
+  const id = state.tiers[task.id];
+  return task.tiers.find((t) => t.id === id) ?? task.tiers.find((t) => t.id === task.default_tier);
+};
+const isolating = (task = currentTask()) => task.isolatable && Boolean(state.isolate[task.id]);
+const stemChoices = (task = currentTask()) => (isolating(task) ? [...task.stems, "instrumental"] : task.stems);
+const chosenStems = (task = currentTask()) => {
+  const picked = state.stems[task.id];
+  const choices = stemChoices(task);
+  const kept = picked ? choices.filter((s) => picked.includes(s)) : choices;
+  return kept.length ? kept : choices;
+};
+const jobById = (id) => state.snapshot.jobs.find((j) => j.id === id);
+
+/* rail */
+
+function radio(container, items, current, onPick) {
+  container.replaceChildren();
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(item.id === current));
+    button.textContent = item.label;
+    button.addEventListener("click", () => onPick(item.id));
+    container.append(button);
+  }
 }
 
-function refreshModelNote() {
-  const m = modelFor(task, tier);
-  const sdr = m.sdr?.vocals ? ` · vocal <b>SDR ${m.sdr.vocals}</b>` : "";
-  $("preset-desc").innerHTML = `${TIER_LABEL[tier]} - ${m.label || "auto"}${sdr}`;
-  renderStemChecks(m);
-}
-
-/* ---------- sidebar ---------- */
 function renderTasks() {
-  const box = $("usecases");
-  box.innerHTML = "";
-  const entries = Object.entries(TASKS);
-  const fallback = [["vocals", { label: "Vocals", desc: "Lead vocal + instrumental" }],
-    ["karaoke", { label: "Karaoke", desc: "Instrumental track maker" }],
-    ["band", { label: "Full band", desc: "Vocals / drums / bass / other" }],
-    ["band6", { label: "Band 6-stem", desc: "+ guitar and piano" }],
-    ["drums", { label: "Drum kit", desc: "Kick / snare / toms / cymbals" }],
-    ["cleanup", { label: "Cleanup", desc: "Denoise / de-reverb" }]];
-  for (const [id, info] of (entries.length ? entries : fallback)) {
-    const b = document.createElement("button");
-    b.className = "task" + (id === task ? " on" : "");
-    const hint = { vocals: "2 stems", karaoke: "2 stems", band: "4 stems", band6: "6 stems", drums: "6 stems", cleanup: "2 stems" }[id] || "";
-    b.innerHTML = `<span class="glyph">${icon(id)}</span><span><strong>${info.label}</strong><small>${info.desc || ""}</small></span><span class="tier-hint">${hint}</span>`;
-    b.onclick = () => {
-      task = id;
-      [...box.children].forEach((c) => c.classList.remove("on"));
-      b.classList.add("on");
-      refreshModelNote();
-      if (chosenFile) setJobSub();
-    };
-    box.appendChild(b);
+  const nav = $("tasks");
+  nav.replaceChildren();
+  nav.setAttribute("role", "radiogroup");
+  const groups = [["separate", "Separate"], ["clean", "Clean up"]];
+  for (const [group, title] of groups) {
+    const heading = document.createElement("p");
+    heading.className = "task-group";
+    heading.textContent = title;
+    nav.append(heading);
+    for (const task of state.catalog.tasks.filter((t) => t.group === group)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "task";
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", String(task.id === state.task));
+      const label = document.createElement("span");
+      label.textContent = task.label;
+      const count = document.createElement("span");
+      count.className = "task-count";
+      count.textContent = task.stems.length;
+      const blurb = document.createElement("span");
+      blurb.className = "task-blurb";
+      blurb.textContent = task.blurb;
+      button.append(label, count, blurb);
+      button.addEventListener("click", () => {
+        state.task = task.id;
+        persist();
+        renderRail();
+      });
+      nav.append(button);
+    }
   }
 }
 
-function renderTiers() {
-  const seg = $("quality-seg");
-  seg.innerHTML = "";
-  for (const q of TIERS) {
-    const b = document.createElement("button");
-    b.textContent = q[0].toUpperCase() + q.slice(1);
-    b.dataset.q = q;
-    b.setAttribute("role", "radio");
-    if (q === tier) b.classList.add("on");
-    b.onclick = () => {
-      tier = q;
-      [...seg.children].forEach((c) => c.classList.remove("on"));
-      b.classList.add("on");
-      refreshModelNote();
-      if (chosenFile) setJobSub();
-    };
-    seg.appendChild(b);
+function renderTier() {
+  const task = currentTask();
+  const tier = currentTier(task);
+  $("tiers").classList.toggle("hidden", task.tiers.length < 2);
+  radio($("tiers"), task.tiers, tier.id, (id) => {
+    state.tiers[task.id] = id;
+    persist();
+    renderRail();
+  });
+  $("tier-blurb").textContent = tier.blurb;
+  const list = $("tier-models");
+  list.replaceChildren();
+  for (const id of tier.models) {
+    const model = state.catalog.models[id];
+    const item = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = `${model.author} ${model.label}`;
+    const side = document.createElement("span");
+    side.className = model.present ? "license" : "license pending";
+    side.textContent = model.present ? model.license.replace("Not stated by the author", "license unstated") : megabytes(model.missing);
+    side.title = model.present ? model.license : "Downloads on first use";
+    item.append(name, side);
+    list.append(item);
   }
+}
+
+function renderStems() {
+  const task = currentTask();
+  const box = $("stem-picks");
+  box.replaceChildren();
+  const chosen = chosenStems(task);
+  for (const stem of stemChoices(task)) {
+    const label = document.createElement("label");
+    label.className = "stem-pick";
+    label.style.setProperty("--stem", colorOf(stem));
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = chosen.includes(stem);
+    input.addEventListener("change", () => {
+      const next = stemChoices(task).filter((s) => (s === stem ? input.checked : chosenStems(task).includes(s)));
+      if (!next.length) {
+        input.checked = true;
+        return;
+      }
+      state.stems[task.id] = next;
+      persist();
+      renderRoute();
+    });
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    const name = document.createElement("span");
+    name.textContent = stem;
+    label.append(input, dot, name);
+    box.append(label);
+  }
+  $("isolate-row").classList.toggle("hidden", !task.isolatable);
+  $("isolate").checked = isolating(task);
 }
 
 function renderFormats() {
-  const seg = $("format-seg");
-  seg.innerHTML = "";
-  for (const f of ["mp3", "wav", "flac"]) {
-    const b = document.createElement("button");
-    b.textContent = f.toUpperCase();
-    b.setAttribute("role", "radio");
-    if (f === format) b.classList.add("on");
-    b.onclick = () => {
-      format = f;
-      [...seg.children].forEach((c) => c.classList.remove("on"));
-      b.classList.add("on");
-    };
-    seg.appendChild(b);
-  }
-}
-
-function renderStemChecks(m) {
-  const box = $("stem-checks");
-  box.innerHTML = "";
-  for (const s of (m.stems || ["vocals", "instrumental"])) {
-    const lab = document.createElement("label");
-    lab.className = "chip";
-    lab.innerHTML = `<input type="checkbox" checked data-stem="${s}"> ${s}`;
-    lab.querySelector("input").onchange = (e) => lab.classList.toggle("off", !e.target.checked);
-    box.appendChild(lab);
-  }
-}
-
-/* ---------- file intake + hero waveform ---------- */
-let heroCtx = null;
-function setFile(f) {
-  if (!f) return;
-  stopAll();
-  stemState = {};
-  chosenFile = f;
-  $("dz-title").textContent = f.name;
-  $("dz-sub").textContent = `${(f.size / 1048576).toFixed(1)} MB · click again to replace`;
-  $("file-meta").textContent = `${(TASKS[task] || {}).label || task} · ${tier} · ${format.toUpperCase()}`;
-  $("hero-icon").parentElement.classList.add("live");
-  drawHeroPreview(f);
-  $("job-panel").classList.remove("hidden");
-  $("job-name").textContent = f.name;
-  setJobSub();
-  $("go").disabled = false;
-  $("results").classList.add("hidden");
-  $("stats").classList.add("hidden");
-}
-function setJobSub() {
-  $("job-sub").textContent = `${(TASKS[task] || {}).label || task} · ${tier} · ${modelFor(task, tier).label || ""}`;
-}
-
-async function drawHeroPreview(f) {
-  const canvas = $("hero-wave");
-  canvas.classList.remove("hidden");
-  try {
-    heroCtx = heroCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const buf = await heroCtx.decodeAudioData(await f.arrayBuffer());
-    const peaks = computePeaks(buf, 220);
-    paintWave(canvas, peaks, "#30a742", 0);
-  } catch { canvas.classList.add("hidden"); }
-}
-
-function computePeaks(buf, n) {
-  const ch = buf.getChannelData(0);
-  const step = Math.max(1, Math.floor(ch.length / n));
-  const peaks = [];
-  for (let i = 0; i < n; i++) {
-    let mx = 0;
-    const start = i * step;
-    for (let j = start; j < Math.min(start + step, ch.length); j += 4) {
-      const v = Math.abs(ch[j]);
-      if (v > mx) mx = v;
-    }
-    peaks.push(mx);
-  }
-  return peaks;
-}
-
-function paintWave(canvas, peaks, color, progress) {
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth || canvas.parentElement.clientWidth - 48;
-  const h = 72;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  const c = canvas.getContext("2d");
-  c.scale(dpr, dpr);
-  c.clearRect(0, 0, w, h);
-  const bw = w / peaks.length;
-  peaks.forEach((p, i) => {
-    const bh = Math.max(2, p * (h - 8));
-    const x = i * bw + bw * 0.2;
-    const light = document.documentElement.dataset.theme === "light";
-    c.fillStyle = (i / peaks.length) <= progress ? color : (light ? "rgba(24,24,27,0.14)" : "rgba(255,255,255,0.14)");
-    c.beginPath();
-    c.roundRect(x, (h - bh) / 2, Math.max(1.5, bw * 0.6), bh, 2);
-    c.fill();
+  const formats = state.catalog.formats.map((id) => ({ id, label: id.toUpperCase() }));
+  radio($("formats"), formats, state.format, (id) => {
+    state.format = id;
+    persist();
+    renderFormats();
   });
+  $("format-note").textContent = FORMAT_NOTES[state.format];
 }
 
-$("file").onchange = (e) => setFile(e.target.files[0]);
-const dz = $("dropzone");
-dz.onclick = (e) => { if (e.target.tagName !== "INPUT") $("file").click(); };
-["dragover", "dragenter"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
-["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
-dz.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
-dz.addEventListener("keydown", (e) => { if (e.key === "Enter") $("file").click(); });
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !$("job-panel").classList.contains("hidden") && !$("go").disabled && document.activeElement.tagName !== "INPUT") $("go").click();
-});
-$("overlap").oninput = (e) => ($("overlap-val").textContent = e.target.value);
-$("shifts").oninput = (e) => ($("shifts-val").textContent = e.target.value === "0" ? "auto" : e.target.value);
-
-/* ---------- jobs ---------- */
-const stageClock = {};
-function fmtElapsed(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+function renderFirstRun() {
+  const task = currentTask();
+  const tier = currentTier(task);
+  const ids = new Set(tier.models);
+  if (isolating(task)) ids.add("leap-xe-voc");
+  const missing = [...ids].reduce((sum, id) => sum + (state.catalog.models[id].missing || 0), 0);
+  $("first-run").textContent = missing
+    ? `${task.label} at this quality needs ${megabytes(missing)} of model weights. They download once, on the first run.`
+    : "Everything runs on this computer. Nothing is uploaded.";
 }
-function setStage(name) {
-  const order = ["upload", "analyze", "separate", "encode"];
-  const now = Date.now();
-  const idx = name === "done" || name === "error" ? 99 : order.indexOf(name);
-  document.querySelectorAll("#stages li").forEach((li) => {
-    const key = li.dataset.s;
-    const i = order.indexOf(key);
-    const timer = li.querySelector(".timer");
-    if (key === name && !stageClock[key]) stageClock[key] = now;
-    if (i < idx || name === "done") {
-      li.classList.remove("active");
-      li.classList.add(name === "error" && i === idx ? "failed" : "done");
-      if (stageClock[key] && timer && !timer.textContent) timer.textContent = fmtElapsed(now - stageClock[key]);
-    } else if (key === name) {
-      li.classList.add("active");
-      li.classList.remove("done", "failed");
-      if (timer) timer.textContent = "working…";
+
+function routeItem(className, ...children) {
+  const item = document.createElement("li");
+  item.className = className;
+  item.append(...children);
+  return item;
+}
+
+function stemChip(stem) {
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.style.setProperty("--stem", colorOf(stem));
+  chip.textContent = stem;
+  return chip;
+}
+
+function renderRoute() {
+  const task = currentTask();
+  const tier = currentTier(task);
+  const steps = isolating(task) ? tier.isolated_steps : tier.steps;
+  const route = $("route");
+  route.replaceChildren(routeItem("source", "your file"));
+  for (const step of steps) {
+    if (step.input !== "mix") route.append(routeItem("", stemChip(step.input)));
+    const models = step.models.map((id) => state.catalog.models[id]);
+    const box = document.createElement("span");
+    box.className = "box";
+    if (models.length > 1) {
+      box.textContent = `${models.map((m) => m.label).join(" + ")}, averaged`;
     } else {
-      li.classList.remove("active", "done", "failed");
-      if (timer) timer.textContent = "";
-      delete stageClock[key];
+      const by = document.createElement("span");
+      by.className = "by";
+      by.textContent = models[0].author;
+      box.append(`${models[0].label} `, by);
     }
-  });
-  if (name === "upload") for (const k of Object.keys(stageClock)) delete stageClock[k];
+    route.append(routeItem("model", box));
+  }
+  const outputs = document.createElement("span");
+  outputs.style.display = "inline-flex";
+  outputs.style.gap = "12px";
+  outputs.append(...chosenStems(task).map(stemChip));
+  route.append(routeItem("", outputs));
 }
-setInterval(() => {
-  const now = Date.now();
-  document.querySelectorAll("#stages li.active .timer").forEach((t) => {
-    const key = t.closest("li").dataset.s;
-    if (stageClock[key]) t.textContent = fmtElapsed(now - stageClock[key]);
-  });
-}, 500);
 
-$("go").onclick = async () => {
-  if (!chosenFile) return;
-  const fd = new FormData();
-  fd.append("file", chosenFile);
-  fd.append("task", task);
-  fd.append("tier", tier);
-  fd.append("output_format", format);
-  const checked = [...document.querySelectorAll("#stem-checks input:checked")].map((i) => i.dataset.stem);
-  if (checked.length) fd.append("stems", checked.join(","));
-  fd.append("overlap", $("overlap").value);
-  if (tier === "ultra" || $("enhanced").checked) fd.append("enhanced", "true");
-  if ($("shifts").value !== "0") fd.append("shifts", $("shifts").value);
+function renderRail() {
+  renderTasks();
+  renderTier();
+  renderStems();
+  renderFormats();
+  renderFirstRun();
+  renderRoute();
+}
 
+$("isolate").addEventListener("change", (event) => {
+  state.isolate[state.task] = event.target.checked;
+  persist();
+  renderStems();
+  renderFirstRun();
+  renderRoute();
+});
+
+/* staging */
+
+function stage(items) {
+  const known = new Set(state.staged.map((s) => s.key));
+  for (const item of items) if (!known.has(item.key)) state.staged.push(item);
+  state.selected = null;
+  renderStage();
+}
+
+const stagePaths = (paths) => stage(paths.map((path) => ({ key: path, path, name: path.split(/[\\/]/).pop() })));
+const stageFiles = (files) => stage([...files].map((file) => ({ key: `${file.name}:${file.size}:${file.lastModified}`, file, name: file.name })));
+
+function renderStaged() {
+  const list = $("staged-list");
+  list.replaceChildren();
+  for (const item of state.staged) {
+    const row = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = item.name;
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.textContent = "remove";
+    drop.addEventListener("click", () => {
+      state.staged = state.staged.filter((s) => s !== item);
+      renderStage();
+    });
+    row.append(name, drop);
+    list.append(row);
+  }
+  const count = state.staged.length;
+  $("staged-title").textContent = count === 1 ? "1 file ready" : `${count} files ready`;
+}
+
+async function separate() {
+  if (!state.staged.length) return;
+  const task = currentTask();
+  const settings = { task: task.id, tier: currentTier(task).id, isolate: isolating(task), stems: chosenStems(task), format: state.format };
+  const paths = state.staged.filter((s) => s.path).map((s) => s.path);
+  const files = state.staged.filter((s) => s.file).map((s) => s.file);
   $("go").disabled = true;
-  $("results").classList.add("hidden");
-  $("progress").classList.remove("hidden");
-  setStage("upload");
-  $("status-msg").textContent = "Uploading…";
-
-  const res = await fetch("/api/jobs", { method: "POST", body: fd });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    $("status-msg").textContent = "Error: " + (err.detail || res.statusText);
-    setStage("upload");
-    $("go").disabled = false;
-    return;
-  }
-  jobId = (await res.json()).id;
-  setStage("analyze");
-  pollTimer = setInterval(poll, 1500);
-  poll();
-};
-
-async function poll() {
-  let job;
   try {
-    job = await (await fetch(`/api/jobs/${jobId}`)).json();
-  } catch {
-    $("status-msg").textContent = "Connection lost - retrying…";
+    const created = [];
+    if (paths.length) created.push(...(await api.post("/api/jobs", { ...settings, paths })).jobs);
+    if (files.length) {
+      const form = new FormData();
+      for (const [key, value] of Object.entries(settings)) form.append(key, Array.isArray(value) ? value.join(",") : String(value));
+      for (const file of files) form.append("files", file);
+      created.push(...(await api.post("/api/jobs", form)).jobs);
+    }
+    state.staged = [];
+    state.selected = created[0]?.id ?? null;
+  } catch (error) {
+    $("staged-title").textContent = error.message;
+  } finally {
+    $("go").disabled = false;
+    renderStage();
+  }
+}
+
+/* queue dock */
+
+function jobStatusText(job) {
+  if (job.status === "running") return job.detail || "Working";
+  if (job.status === "error") return job.error || "Failed";
+  return STATUS_TEXT[job.status] ?? job.status;
+}
+
+function jobActions(job) {
+  const actions = [];
+  if (job.status === "queued" || job.status === "running") actions.push(["Cancel", () => api.post(`/api/jobs/${job.id}/cancel`)]);
+  if (job.status === "error" || job.status === "cancelled") actions.push(["Retry", async () => { state.selected = (await api.post(`/api/jobs/${job.id}/retry`)).id; }]);
+  if (job.status !== "queued" && job.status !== "running") {
+    actions.push(["Remove", async () => {
+      if (state.selected === job.id) state.selected = null;
+      await api.remove(`/api/jobs/${job.id}`);
+    }]);
+  }
+  return actions;
+}
+
+function taskLine(job) {
+  const task = state.catalog.tasks.find((t) => t.id === job.task);
+  const tier = task?.tiers.find((t) => t.id === job.tier);
+  const parts = [task?.label ?? job.task, task && task.tiers.length > 1 ? tier?.label : null, job.format.toUpperCase()];
+  return parts.filter(Boolean).join(" Â· ");
+}
+
+function renderJobs() {
+  const list = $("jobs");
+  const jobs = state.snapshot.jobs;
+  $("dock-count").textContent = jobs.length ? String(jobs.length) : "";
+  if (!jobs.length) {
+    list.innerHTML = '<li class="jobs-empty">Separated songs show up here and stay for a week.</li>';
     return;
   }
-  const p = job.progress || 0;
-  $("bar").style.width = `${p * 100}%`;
-  $("pct").textContent = `${Math.round(p * 100)}%`;
-  $("status-msg").textContent = `${job.message || job.status} · ${job.model_label || job.model || ""}`;
-  $("job-sub").textContent = `${job.filename || ""} · ${job.model_label || ""}`;
-  setStage(p < 0.05 ? "upload" : p < 0.15 ? "analyze" : p < 0.9 ? "separate" : "encode");
+  list.replaceChildren();
+  for (const job of jobs) {
+    const row = document.createElement("li");
+    row.className = "job" + (job.id === state.selected ? " selected" : "");
+    row.dataset.status = job.status;
+    row.tabIndex = 0;
+    const dot = document.createElement("span");
+    dot.className = "job-state";
+    const name = document.createElement("span");
+    name.className = "job-name";
+    name.textContent = job.name;
+    const task = document.createElement("span");
+    task.className = "job-task mono";
+    task.textContent = taskLine(job);
+    const status = document.createElement("span");
+    status.className = "job-status";
+    if (job.status === "running") {
+      const bar = document.createElement("span");
+      bar.className = "bar";
+      bar.innerHTML = "<span></span>";
+      bar.firstChild.style.width = `${Math.round((job.fraction || 0) * 100)}%`;
+      status.append(bar);
+    }
+    const text = document.createElement("span");
+    text.className = "text";
+    text.textContent = jobStatusText(job);
+    text.title = text.textContent;
+    status.append(text);
+    const actions = document.createElement("span");
+    actions.className = "job-actions";
+    for (const [label, run] of jobActions(job)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        run().catch((error) => alert(error.message));
+      });
+      actions.append(button);
+    }
+    row.append(dot, name, task, status, actions);
+    const pick = () => {
+      state.selected = job.id;
+      state.staged = state.staged.length ? state.staged : [];
+      renderStage();
+    };
+    row.addEventListener("click", pick);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") pick();
+    });
+    list.append(row);
+  }
+}
+
+/* main stage */
+
+function show(view) {
+  for (const id of ["intake", "staged", "session", "progress"]) $(id).classList.toggle("hidden", !view.includes(id));
+}
+
+function renderStage() {
+  renderJobs();
+  const job = state.selected ? jobById(state.selected) : null;
+  if (!job) {
+    closeSession();
+    renderStaged();
+    show(state.staged.length ? ["staged", "intake"] : ["intake"]);
+    document.title = "Split";
+    return;
+  }
+  document.title = `${job.name} Â· Split`;
   if (job.status === "done") {
-    clearInterval(pollTimer);
-    $("go").disabled = false;
-    $("tb-zip").disabled = false;
-    setStage("done");
-    showResults(job);
-  } else if (job.status === "error") {
-    clearInterval(pollTimer);
-    $("go").disabled = false;
-    setStage("upload");
+    show(["session"]);
+    if (state.session?.id !== job.id) openSession(job);
+    return;
+  }
+  closeSession();
+  show(["progress"]);
+  renderProgress(job);
+}
+
+function renderProgress(job) {
+  $("progress-name").textContent = job.name;
+  $("progress-task").textContent = taskLine(job);
+  const meter = $("meter");
+  const fraction = job.status === "running" && job.phase === "download" ? job.phase_fraction : job.fraction;
+  const busy = job.status === "running" && (fraction == null || job.phase === "starting");
+  meter.classList.toggle("indeterminate", busy);
+  $("meter-fill").style.width = busy ? "" : `${Math.round((fraction || 0) * 100)}%`;
+  meter.setAttribute("aria-valuenow", String(Math.round((fraction || 0) * 100)));
+  const detail = job.status === "queued" ? "Waiting for the job ahead of it" : job.status === "running" ? job.detail : STATUS_TEXT[job.status] ?? "";
+  $("progress-detail").textContent = detail;
+  $("progress-error").classList.toggle("hidden", job.status !== "error");
+  $("progress-error").textContent = job.error ?? "";
+  $("progress-clock").textContent = progressClock(job);
+  $("progress-cancel").classList.toggle("hidden", !["queued", "running"].includes(job.status));
+  $("progress-retry").classList.toggle("hidden", !["error", "cancelled"].includes(job.status));
+}
+
+function progressClock(job) {
+  if (job.status !== "running" || !job.started) return "";
+  const elapsed = Date.now() / 1000 - job.started;
+  const fraction = job.fraction || 0;
+  const text = `${formatTime(elapsed)} elapsed`;
+  if (fraction < 0.08 || job.phase === "download") return text;
+  return `${text} · about ${formatTime((elapsed * (1 - fraction)) / fraction)} left`;
+}
+
+setInterval(() => {
+  const job = state.selected ? jobById(state.selected) : null;
+  if (job?.status === "running") $("progress-clock").textContent = progressClock(job);
+}, 1000);
+
+$("progress-cancel").addEventListener("click", () => api.post(`/api/jobs/${state.selected}/cancel`));
+$("progress-retry").addEventListener("click", async () => {
+  state.selected = (await api.post(`/api/jobs/${state.selected}/retry`)).id;
+  renderStage();
+});
+
+/* session: lanes + transport */
+
+function closeSession() {
+  if (!state.session) return;
+  mixer.dispose();
+  for (const lane of state.session.lanes) lane.observer.disconnect();
+  $("lanes").querySelectorAll(".lane").forEach((n) => n.remove());
+  state.session = null;
+  renderTransport();
+}
+
+async function openSession(job) {
+  closeSession();
+  const stems = Object.keys(job.outputs);
+  const session = { id: job.id, job, lanes: [], ready: false };
+  state.session = session;
+  $("session-name").textContent = job.name;
+  $("session-meta").textContent = `${taskLine(job)} Â· ${formatTime(job.duration)}`;
+  $("clock-total").textContent = `/ ${formatTime(job.duration)}`;
+  $("export").classList.toggle("hidden", !native());
+  $("mix-note").classList.add("hidden");
+  const template = $("lane-template");
+  for (const [index, stem] of stems.entries()) {
+    const node = template.content.firstElementChild.cloneNode(true);
+    node.style.setProperty("--stem", colorOf(stem));
+    node.querySelector(".lane-name").textContent = stem;
+    node.querySelector(".lane-key").textContent = index < 9 ? String(index + 1) : "";
+    const save = node.querySelector(".lane-save");
+    save.href = `/api/jobs/${job.id}/stems/${stem}?download=true`;
+    save.download = "";
+    const lane = { stem, node, canvas: node.querySelector("canvas"), peaks: null, level: node.querySelector(".level span") };
+    lane.observer = new ResizeObserver(() => drawWave(lane.canvas, lane.peaks, colorOf(stem)));
+    lane.observer.observe(lane.canvas);
+    wireLane(lane);
+    $("lanes").append(node);
+    session.lanes.push(lane);
+    api.get(`/api/jobs/${job.id}/peaks/${stem}`).then((peaks) => {
+      lane.peaks = peaks;
+      drawWave(lane.canvas, peaks, colorOf(stem));
+    });
+  }
+  renderTransport();
+  const loaded = await mixer.load(stems.map((stem) => ({ stem, url: `/api/jobs/${job.id}/stems/${stem}` })), job.duration);
+  if (state.session !== session || !loaded) return;
+  session.ready = true;
+  if (mixer.mode === "media") {
+    $("mix-note").textContent = "This session is long, so preview streams from disk. Playback may drift by a few milliseconds between stems; the files themselves are exact.";
+    $("mix-note").classList.remove("hidden");
+  }
+  renderTransport();
+}
+
+function wireLane(lane) {
+  const { node, stem } = lane;
+  const solo = node.querySelector(".solo");
+  const mute = node.querySelector(".mute");
+  const gain = node.querySelector(".gain");
+  const readout = node.querySelector(".gain-read");
+  const toggle = (button, key) => {
+    const on = button.getAttribute("aria-pressed") !== "true";
+    button.setAttribute("aria-pressed", String(on));
+    mixer.set(stem, { [key]: on });
+    refreshAudible();
+  };
+  solo.setAttribute("aria-pressed", "false");
+  mute.setAttribute("aria-pressed", "false");
+  solo.addEventListener("click", () => toggle(solo, "solo"));
+  mute.addEventListener("click", () => toggle(mute, "mute"));
+  lane.solo = () => toggle(solo, "solo");
+  lane.mute = () => toggle(mute, "mute");
+  gain.addEventListener("input", () => {
+    const db = Number(gain.value);
+    readout.textContent = db <= -60 ? "-inf" : db.toFixed(1);
+    mixer.set(stem, { db });
+  });
+  gain.addEventListener("dblclick", () => {
+    gain.value = "0";
+    gain.dispatchEvent(new Event("input"));
+  });
+  const wave = node.querySelector(".lane-wave");
+  const hover = node.querySelector(".lane-hover");
+  const timeAt = (event) => {
+    const box = wave.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)) * mixer.duration;
+  };
+  wave.addEventListener("pointermove", (event) => {
+    hover.textContent = formatTime(timeAt(event), true);
+    const box = wave.getBoundingClientRect();
+    hover.style.left = `${Math.min(box.width - 56, event.clientX - box.left + 8)}px`;
+  });
+  wave.addEventListener("pointerdown", (event) => {
+    wave.setPointerCapture(event.pointerId);
+    mixer.seek(timeAt(event));
+    const drag = (move) => mixer.seek(timeAt(move));
+    wave.addEventListener("pointermove", drag);
+    wave.addEventListener("pointerup", () => wave.removeEventListener("pointermove", drag), { once: true });
+  });
+}
+
+function refreshAudible() {
+  for (const lane of state.session?.lanes ?? []) {
+    lane.node.classList.toggle("silent", !mixer.audible(lane.stem));
   }
 }
 
-/* ---------- results: per-stem mixer ---------- */
-function showResults(job) {
-  const urls = job.stems || {};
-  const box = $("tracks");
-  box.innerHTML = "";
-  stemState = {};
-  const m = MODELS.find((x) => x.id === job.model) || {};
-  const names = Object.keys(urls);
-  $("results-sub").textContent = `${names.length} stems · ${m.label || ""} · solo / mute to preview the mix`;
-  names.forEach((stem, i) => showResultsEntry(box, m, stem, urls[stem], i));
-  $("results").classList.remove("hidden");
-  $("progress").classList.add("hidden");
-  $("stats").classList.add("hidden");
-  $("results").scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-function showResultsEntry(box, m, stem, url, i) {
-  const palette = Object.values(STEM_COLORS);
-  const color = STEM_COLORS[stem.toLowerCase()] || STEM_COLORS[stem.toLowerCase().replace(/s$/, "")] || palette[i % palette.length];
-  const sdr = m.sdr?.[stem] ?? (stem === "vocals" ? m.sdr?.vocals : null);
-  const div = document.createElement("div");
-  div.className = "track";
-  div.style.setProperty("--stem", color);
-  div.innerHTML = `
-    <div>
-      <div class="stem-top"><span class="stem-dot" style="background:${color}"></span>
-        <div class="stem-name">${stem}${sdr ? `<span class="stem-sdr">SDR ${sdr}</span>` : ""}</div></div>
-      <div class="stem-btns">
-        <button class="mini solo">S</button><button class="mini mute">M</button>
-      </div>
-    </div>
-    <div class="stem-right">
-      <canvas height="64" title="Click to seek"></canvas>
-      <div class="stem-row2">
-        <audio controls preload="metadata" src="${url}"></audio>
-        <label class="vol">vol <input type="range" min="0" max="1" step="0.01" value="1"></label>
-        <button class="dl-btn" title="Download ${stem}">⤓</button>
-      </div>
-    </div>`;
-  box.appendChild(div);
-  const audio = div.querySelector("audio");
-  const st = { url, audio, solo: false, mute: false, vol: 1, peaks: null, canvas: div.querySelector("canvas"), color, div, raf: 0 };
-  stemState[stem] = st;
-
-  div.querySelector(".solo").onclick = (e) => {
-    st.solo = !st.solo;
-    e.target.classList.toggle("solo-on", st.solo);
-    div.classList.toggle("soloed", st.solo);
-    applyMix();
-  };
-  div.querySelector(".mute").onclick = (e) => {
-    st.mute = !st.mute;
-    e.target.classList.toggle("mute-on", st.mute);
-    div.classList.toggle("muted-d", st.mute);
-    applyMix();
-  };
-  div.querySelector(".vol input").oninput = (e) => { st.vol = +e.target.value; applyMix(); };
-  div.querySelector(".dl-btn").onclick = () => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = stem;
-    a.click();
-  };
-  audio.onplay = () => { div.classList.add("playing"); drawProgress(st); };
-  audio.onpause = audio.onended = () => { div.classList.remove("playing"); cancelAnimationFrame(st.raf); paintStem(st, audio.currentTime / (audio.duration || 1)); };
-  audio.onloadedmetadata = () => loadPeaks(st);
-  st.canvas.onclick = (e) => {
-    if (!audio.duration) return;
-    const r = st.canvas.getBoundingClientRect();
-    audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration;
-  };
+function renderTransport() {
+  const ready = Boolean(state.session?.ready);
+  const play = $("play");
+  play.disabled = !ready;
+  play.classList.toggle("playing", mixer.playing);
+  play.setAttribute("aria-label", mixer.playing ? "Pause" : "Play");
+  play.title = ready ? `${mixer.playing ? "Pause" : "Play"} (Space)` : "Loading audio";
 }
 
-function applyMix() {
-  const anySolo = Object.values(stemState).some((s) => s.solo);
-  for (const s of Object.values(stemState)) {
-    const audible = anySolo ? s.solo : !s.mute;
-    s.audio.volume = audible ? s.vol : 0;
+async function togglePlay() {
+  if (!state.session?.ready) return;
+  await mixer.toggle();
+  renderTransport();
+}
+
+$("play").addEventListener("click", togglePlay);
+
+function frame() {
+  mixer.tick();
+  const session = state.session;
+  if (session) {
+    const position = mixer.position();
+    $("clock").textContent = formatTime(position, true);
+    const lanes = $("lanes");
+    const wave = session.lanes[0]?.node.querySelector(".lane-wave");
+    if (wave && mixer.duration) {
+      const x = wave.offsetLeft + (position / mixer.duration) * wave.clientWidth;
+      $("playhead").style.transform = `translateX(${x - wave.offsetLeft}px)`;
+      $("playhead").style.left = `${wave.offsetLeft}px`;
+      $("playhead").style.height = `${lanes.scrollHeight}px`;
+    }
+    for (const lane of session.lanes) lane.level.style.width = `${Math.round(mixer.level(lane.stem) * 100)}%`;
+    if (!mixer.playing && $("play").classList.contains("playing")) renderTransport();
   }
+  requestAnimationFrame(frame);
 }
 
-async function loadPeaks(st) {
+$("zip").addEventListener("click", () => {
+  if (state.session) window.location.href = `/api/jobs/${state.session.id}/zip`;
+});
+$("reveal").addEventListener("click", () => {
+  if (state.session) api.post(`/api/jobs/${state.session.id}/reveal`).catch((error) => alert(error.message));
+});
+$("export").addEventListener("click", async () => {
+  const bridge = native();
+  if (!bridge || !state.session) return;
+  const folder = await bridge.pick_folder();
+  if (!folder) return;
   try {
-    heroCtx = heroCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const buf = await heroCtx.decodeAudioData(await (await fetch(st.url)).arrayBuffer());
-    st.peaks = computePeaks(buf, 180);
-    paintStem(st, 0);
-  } catch { /* keep native player only */ }
-}
-
-function paintStem(st, progress) {
-  if (!st.peaks) return;
-  paintWave(st.canvas, st.peaks, st.color, progress || 0);
-}
-function drawProgress(st) {
-  cancelAnimationFrame(st.raf);
-  const step = () => {
-    if (st.audio.paused) return;
-    paintStem(st, st.audio.currentTime / (st.audio.duration || 1));
-    st.raf = requestAnimationFrame(step);
-  };
-  step();
-}
-
-/* ---------- transport ---------- */
-function stopAll() {
-  for (const s of Object.values(stemState)) {
-    try { s.audio.pause(); } catch { /* noop */ }
-    cancelAnimationFrame(s.raf);
+    const { files } = await api.post(`/api/jobs/${state.session.id}/export`, { folder });
+    $("session-meta").textContent = `Saved ${files.length} files to ${folder}`;
+  } catch (error) {
+    alert(error.message);
   }
-  $("play-all").textContent = "▶ Play all";
+});
+
+/* models sheet */
+
+function renderModels() {
+  const list = $("model-list");
+  list.replaceChildren();
+  for (const model of Object.values(state.catalog.models)) {
+    const download = state.snapshot.downloads[model.id];
+    const item = document.createElement("li");
+    item.className = "model";
+    const title = document.createElement("div");
+    title.className = "model-title";
+    title.textContent = `${model.label} `;
+    const by = document.createElement("span");
+    by.className = "by";
+    by.textContent = `by ${model.author}`;
+    title.append(by);
+    const meta = document.createElement("div");
+    meta.className = "model-meta";
+    const link = document.createElement("a");
+    link.href = model.source;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = "source";
+    const scores = Object.entries(model.scores).map(([stem, sdr]) => `${stem} ${sdr.toFixed(2)}`).join(", ");
+    meta.append(`${model.license} Â· ${megabytes(model.size)}${scores ? ` Â· SDR ${scores}` : ""} Â· `, link);
+    const side = document.createElement("div");
+    side.className = "model-side";
+    if (download && ["queued", "running"].includes(download.status)) {
+      const bar = document.createElement("span");
+      bar.className = "bar";
+      bar.innerHTML = "<span></span>";
+      bar.firstChild.style.width = `${Math.round((download.fraction || 0) * 100)}%`;
+      side.append(bar, actionButton("Stop", () => api.post(`/api/models/${model.id}/cancel`)));
+    } else if (model.present) {
+      side.append("Ready", actionButton("Remove", async () => { await api.remove(`/api/models/${model.id}`); await refreshCatalog(); }));
+    } else {
+      if (download?.status === "error") side.append(download.error);
+      side.append(actionButton("Download", () => api.post(`/api/models/${model.id}/download`)));
+    }
+    item.append(title, side, meta);
+    if (model.note) {
+      const note = document.createElement("div");
+      note.className = "model-note";
+      note.textContent = model.note;
+      item.append(note);
+    }
+    list.append(item);
+  }
 }
-$("dl-all").onclick = () => { if (jobId) window.location = `/api/jobs/${jobId}/download`; };
-$("tb-zip").onclick = () => { if (jobId) window.location = `/api/jobs/${jobId}/download`; };
-$("reset").onclick = () => {
-  stopAll();
-  stemState = {};
-  chosenFile = null;
-  $("file").value = "";
-  $("dz-title").textContent = "Drop audio to separate";
-  $("dz-sub").textContent = "mp3 · wav · flac · ogg · m4a - studio stems in seconds";
-  $("file-meta").textContent = "";
-  $("hero-wave").classList.add("hidden");
-  $("job-panel").classList.add("hidden");
-  $("results").classList.add("hidden");
-  $("stats").classList.remove("hidden");
-};
-$("play-all").onclick = () => {
-  const audios = Object.values(stemState).map((s) => s.audio);
-  if (!audios.length) return;
-  const anyPlaying = audios.some((a) => !a.paused);
-  if (anyPlaying) {
-    audios.forEach((a) => a.pause());
-    $("play-all").textContent = "▶ Play all";
+
+function actionButton(label, run) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "quiet";
+  button.textContent = label;
+  button.addEventListener("click", () => run().catch((error) => alert(error.message)));
+  return button;
+}
+
+$("open-models").addEventListener("click", () => {
+  renderModels();
+  $("models-sheet").showModal();
+});
+$("close-models").addEventListener("click", () => $("models-sheet").close());
+
+/* theme */
+
+const THEMES = ["system", "dark", "light"];
+function applyTheme(choice) {
+  const dark = choice === "dark" || (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  $("theme").textContent = `Theme: ${choice}`;
+  for (const lane of state.session?.lanes ?? []) drawWave(lane.canvas, lane.peaks, colorOf(lane.stem));
+}
+$("theme").addEventListener("click", () => {
+  const next = THEMES[(THEMES.indexOf(localStorage.getItem("split.theme") || "system") + 1) % THEMES.length];
+  localStorage.setItem("split.theme", next);
+  applyTheme(next);
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(localStorage.getItem("split.theme") || "system"));
+
+/* intake: drops, picker, keyboard */
+
+let dragDepth = 0;
+const stageEl = $("stage");
+stageEl.addEventListener("dragenter", (event) => {
+  event.preventDefault();
+  dragDepth++;
+  stageEl.classList.add("dropping");
+});
+stageEl.addEventListener("dragleave", () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) stageEl.classList.remove("dropping");
+});
+window.addEventListener("dragover", (event) => event.preventDefault());
+window.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dragDepth = 0;
+  stageEl.classList.remove("dropping");
+  // the desktop shell reads real paths on the python side and offers them over the event stream
+  if (!native() && event.dataTransfer?.files.length) stageFiles(event.dataTransfer.files);
+});
+
+async function addFiles() {
+  const bridge = native();
+  if (bridge) {
+    const picked = await bridge.pick_files();
+    if (picked.length) stagePaths(picked);
   } else {
-    applyMix();
-    audios.forEach((a) => { a.currentTime = 0; a.play().catch(() => {}); });
-    $("play-all").textContent = "⏸ Pause";
+    $("file-input").click();
   }
-};
+}
+$("add-files").addEventListener("click", addFiles);
+$("file-input").addEventListener("change", (event) => {
+  stageFiles(event.target.files);
+  event.target.value = "";
+});
+$("go").addEventListener("click", separate);
+$("clear-staged").addEventListener("click", () => {
+  state.staged = [];
+  renderStage();
+});
+
+document.addEventListener("keydown", (event) => {
+  const target = event.target;
+  const typing = target instanceof HTMLInputElement && target.type !== "range" && target.type !== "checkbox";
+  if (typing || $("models-sheet").open) return;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
+    event.preventDefault();
+    addFiles();
+    return;
+  }
+  if (event.key === "Enter" && state.staged.length && !state.selected) {
+    event.preventDefault();
+    separate();
+    return;
+  }
+  if (!state.session) return;
+  if (event.code === "Space") {
+    event.preventDefault();
+    togglePlay();
+  } else if (event.key === "Home") {
+    mixer.seek(0);
+  } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    if (target instanceof HTMLInputElement && target.type === "range") return;
+    event.preventDefault();
+    const step = (event.shiftKey ? 1 : 5) * (event.key === "ArrowLeft" ? -1 : 1);
+    mixer.seek(mixer.position() + step);
+  } else if (/^Digit[1-9]$/.test(event.code)) {
+    const lane = state.session.lanes[Number(event.code.slice(5)) - 1];
+    if (lane) event.shiftKey ? lane.mute() : lane.solo();
+  } else if (event.key === "Escape") {
+    for (const lane of state.session.lanes) {
+      const solo = lane.node.querySelector(".solo");
+      if (solo.getAttribute("aria-pressed") === "true") lane.solo();
+    }
+  }
+});
+
+/* boot */
+
+async function refreshCatalog() {
+  state.catalog = await api.get("/api/catalog");
+  renderRail();
+  if ($("models-sheet").open) renderModels();
+}
+
+function renderDevice(snapshot) {
+  const device = $("device");
+  if (snapshot.fatal) {
+    device.textContent = "engine failed";
+    device.title = snapshot.fatal.message;
+    device.classList.add("warn");
+    return;
+  }
+  const info = snapshot.device;
+  if (!info) return;
+  device.classList.toggle("warn", info.kind === "cpu");
+  device.textContent = info.kind === "cpu" ? "CPU only" : info.name.replace(/^NVIDIA (GeForce )?/, "");
+  device.title = info.note || (info.kind === "cpu" ? "No supported GPU found. Expect several minutes per song." : `Running on ${info.name}`);
+}
+
+function onSnapshot(snapshot) {
+  const before = state.snapshot.downloads;
+  state.snapshot = snapshot;
+  renderDevice(snapshot);
+  if (state.openedSeq === null) state.openedSeq = snapshot.opened.seq;
+  else if (snapshot.opened.seq !== state.openedSeq) {
+    state.openedSeq = snapshot.opened.seq;
+    stagePaths(snapshot.opened.paths);
+  }
+  const finished = Object.entries(snapshot.downloads).some(([id, d]) => d.status === "done" && before[id]?.status !== "done");
+  const jobDone = snapshot.jobs.some((j) => j.status === "done" && j.finished && Date.now() / 1000 - j.finished < 3);
+  if (finished || jobDone) refreshCatalog();
+  if ($("models-sheet").open) renderModels();
+  if (state.selected && !jobById(state.selected)) state.selected = null;
+  renderStage();
+}
+
+async function boot() {
+  applyTheme(localStorage.getItem("split.theme") || "system");
+  const [system] = await Promise.all([api.get("/api/system"), refreshCatalog()]);
+  $("version").textContent = `v${system.version}`;
+  $("data-dir").textContent = system.data_dir;
+  renderStage();
+  subscribe(onSnapshot);
+  whenNative(() => $("export").classList.toggle("hidden", !state.session));
+  requestAnimationFrame(frame);
+}
 
 boot();

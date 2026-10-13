@@ -1,108 +1,151 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<!doctype html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Split - Studio-grade stem separation</title>
+<meta name="split-token" content="">
+<meta name="color-scheme" content="dark light">
+<title>Split</title>
+<link rel="icon" href="favicon.png">
 <link rel="stylesheet" href="styles.css">
+<script type="module" src="app.js"></script>
 </head>
 <body>
-<div class="window" role="application" aria-label="Split">
-  <header class="titlebar">
-    <div class="traffic"><span class="t close"></span><span class="t min"></span><span class="t max"></span></div>
-    <div class="brand"><span class="brand-mark">◉</span> Split <span class="brand-sub">studio</span></div>
-    <div class="titlebar-right">
-      <button class="icon-btn" id="theme-btn" title="Toggle light / dark">◐</button>
-      <span class="gpu-pill"><span class="gpu-dot" id="gpu-dot"></span><span id="engine-note">local engine</span></span>
-      <button id="tb-zip" class="icon-btn" title="Download all stems (.zip)" disabled>⤓</button>
-    </div>
-  </header>
+<div class="shell">
+  <aside class="rail" aria-label="Separation settings">
+    <header class="rail-head">
+      <span class="wordmark">Split</span>
+      <span class="device mono" id="device" title="Inference device">starting</span>
+    </header>
 
-  <div class="layout">
-    <aside class="sidebar">
-      <p class="side-label">Separate</p>
-      <nav id="usecases" class="tasks"></nav>
+    <nav class="tasks" id="tasks" aria-label="Task"></nav>
 
-      <p class="side-label">Quality</p>
-      <div class="tiers" id="quality-seg" role="radiogroup" aria-label="Quality"></div>
-      <p class="side-note" id="preset-desc"></p>
+    <section class="setting" id="tier-block">
+      <h2>Quality</h2>
+      <div class="segmented" id="tiers" role="radiogroup" aria-label="Quality"></div>
+      <p class="tier-blurb" id="tier-blurb"></p>
+      <ul class="tier-models" id="tier-models"></ul>
+    </section>
 
-      <p class="side-label">Format</p>
-      <div class="segmented" id="format-seg" role="radiogroup" aria-label="Format"></div>
+    <section class="setting">
+      <h2>Stems</h2>
+      <div class="stem-picks" id="stem-picks"></div>
+      <label class="toggle hidden" id="isolate-row">
+        <input type="checkbox" id="isolate">
+        <span>Isolate vocals first</span>
+      </label>
+    </section>
 
-      <div class="side-foot">
-        <span class="lock">▣</span><span>100% on-device · nothing uploaded</span>
+    <section class="setting">
+      <h2>Format</h2>
+      <div class="segmented" id="formats" role="radiogroup" aria-label="Output format"></div>
+      <p class="format-note mono" id="format-note"></p>
+    </section>
+
+    <footer class="rail-foot">
+      <button class="link" id="open-models" type="button">Models</button>
+      <button class="link" id="theme" type="button">Theme</button>
+      <span class="version mono" id="version"></span>
+    </footer>
+  </aside>
+
+  <main class="stage" id="stage">
+    <section class="intake" id="intake">
+      <div class="intake-body">
+        <p class="intake-title">Drop songs here</p>
+        <p class="intake-sub">or <button class="link" id="add-files" type="button">choose files</button>. Anything ffmpeg can read works, including video.</p>
+        <ol class="route" id="route" aria-label="What happens to each file"></ol>
+        <p class="intake-note" id="first-run"></p>
       </div>
-    </aside>
+      <input type="file" id="file-input" multiple hidden accept="audio/*,video/*">
+    </section>
 
-    <main class="main">
-      <section class="hero" id="dropzone" tabindex="0" aria-label="Drop audio file">
-        <div class="hero-top">
-          <div class="hero-icon" id="hero-icon"><span class="eq"><i></i><i></i><i></i><i></i></span></div>
-          <div class="hero-copy">
-            <h1 id="dz-title">Drop audio to separate</h1>
-            <p id="dz-sub">mp3 · wav · flac · ogg · m4a - studio stems in seconds</p>
-          </div>
-          <div class="hero-meta" id="file-meta"></div>
+    <section class="staged hidden" id="staged" aria-label="Files ready to separate">
+      <div class="staged-head">
+        <h2 id="staged-title">Ready</h2>
+        <div class="staged-actions">
+          <button class="link" id="clear-staged" type="button">Clear</button>
+          <button class="primary" id="go" type="button">Separate<kbd>Enter</kbd></button>
         </div>
-        <canvas id="hero-wave" class="hero-wave hidden" height="72"></canvas>
-        <input type="file" id="file" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.opus,.aif,.aiff" hidden>
-      </section>
+      </div>
+      <ol class="staged-list mono" id="staged-list"></ol>
+    </section>
 
-      <section class="panel hidden" id="job-panel">
-        <div class="job-head">
-          <div class="job-meta">
-            <div class="job-name" id="job-name">-</div>
-            <div class="job-sub mono" id="job-sub">-</div>
-          </div>
-          <button id="go" class="cta" disabled><span>Separate stems</span><kbd>↵</kbd></button>
+    <section class="session hidden" id="session" aria-label="Stems">
+      <header class="transport">
+        <div class="session-title">
+          <h1 id="session-name"></h1>
+          <p class="session-meta mono" id="session-meta"></p>
         </div>
-        <div class="stems-row" id="stem-checks"></div>
-        <details class="adv">
-          <summary>Fine-tune</summary>
-          <div class="adv-grid">
-            <label class="opt">Overlap <input type="range" id="overlap" min="0.1" max="0.75" step="0.05" value="0.25"><span id="overlap-val" class="mono">0.25</span></label>
-            <label class="opt">Ensemble <input type="range" id="shifts" min="0" max="10" step="1" value="0"><span id="shifts-val" class="mono">auto</span></label>
-            <label class="opt check"><input type="checkbox" id="enhanced"><span class="switch"></span> Enhanced quality</label>
-          </div>
-        </details>
-        <!-- Codex-style run transcript: each stage leaves a row -->
-        <div class="runlog hidden" id="progress">
-          <ol class="runsteps" id="stages">
-            <li data-s="upload"><span class="dot"></span><span class="verb">Upload</span><span class="timer mono"></span></li>
-            <li data-s="analyze"><span class="dot"></span><span class="verb">Analyze</span><span class="timer mono"></span></li>
-            <li data-s="separate"><span class="dot"></span><span class="verb">Separate</span><span class="timer mono"></span></li>
-            <li data-s="encode"><span class="dot"></span><span class="verb">Encode</span><span class="timer mono"></span></li>
-          </ol>
-          <div class="pbar"><div id="bar"></div></div>
-          <div class="pmeta"><span id="status-msg" class="mono">Queued</span><span id="pct" class="mono">0%</span></div>
+        <div class="transport-controls">
+          <button class="play" id="play" type="button" aria-label="Play" title="Play (Space)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path class="glyph-play" d="M4 2.5v11l9-5.5z"/><path class="glyph-pause" d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z"/></svg>
+          </button>
+          <span class="clock mono" id="clock">0:00.0</span>
+          <span class="clock-total mono" id="clock-total">/ 0:00</span>
         </div>
-      </section>
+        <div class="session-actions">
+          <button class="quiet" id="export" type="button">Export</button>
+          <button class="quiet" id="zip" type="button">Zip</button>
+          <button class="quiet" id="reveal" type="button">Show files</button>
+        </div>
+      </header>
+      <p class="mix-note hidden" id="mix-note"></p>
+      <div class="lanes" id="lanes">
+        <div class="playhead" id="playhead" aria-hidden="true"></div>
+      </div>
+    </section>
 
-      <section class="panel hidden" id="results">
-        <div class="results-head">
-          <div>
-            <h2>Stems</h2>
-            <p class="results-sub" id="results-sub">Solo / mute to preview the mix</p>
-          </div>
-          <div class="results-btns">
-            <button id="play-all" class="ghost">▶ Play all</button>
-            <button id="dl-all" class="cta small">Download .zip</button>
-            <button id="reset" class="ghost" title="Start over">↺</button>
-          </div>
-        </div>
-        <div id="tracks"></div>
-      </section>
+    <section class="progress hidden" id="progress" aria-live="polite">
+      <h1 id="progress-name"></h1>
+      <p class="progress-task mono" id="progress-task"></p>
+      <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="meter"><span id="meter-fill"></span></div>
+      <p class="progress-detail" id="progress-detail"></p>
+      <p class="progress-clock mono" id="progress-clock"></p>
+      <p class="progress-error hidden" id="progress-error"></p>
+      <div class="progress-actions">
+        <button class="quiet" id="progress-cancel" type="button">Cancel</button>
+        <button class="primary hidden" id="progress-retry" type="button">Try again</button>
+      </div>
+    </section>
+  </main>
 
-      <section class="stats" id="stats">
-        <div class="stat"><strong>12.98</strong><span>top vocal SDR - beyond last-gen</span></div>
-        <div class="stat"><strong>0 ms</strong><span>cloud round-trip - runs on your GPU</span></div>
-        <div class="stat"><strong>FLAC</strong><span>lossless in, lossless out</span></div>
-      </section>
-      <p class="models-note" id="models-note"></p>
-    </main>
-  </div>
+  <section class="dock" id="dock" aria-label="Queue and history">
+    <header class="dock-head">
+      <h2>Queue</h2>
+      <span class="dock-count mono" id="dock-count"></span>
+    </header>
+    <ol class="jobs" id="jobs"></ol>
+  </section>
 </div>
-<script src="app.js"></script>
+
+<dialog class="sheet" id="models-sheet" aria-labelledby="models-title">
+  <header class="sheet-head">
+    <h2 id="models-title">Models</h2>
+    <button class="link" id="close-models" type="button">Close</button>
+  </header>
+  <p class="sheet-sub">Weights download the first time a task needs them and stay in <span class="mono" id="data-dir"></span>. Each file is checked against a pinned SHA-256 before it is used.</p>
+  <ol class="model-list" id="model-list"></ol>
+</dialog>
+
+<template id="lane-template">
+  <div class="lane">
+    <div class="lane-head">
+      <span class="lane-swatch"></span>
+      <span class="lane-name"></span>
+      <span class="lane-key mono"></span>
+      <button class="sm solo" type="button" title="Solo">S</button>
+      <button class="sm mute" type="button" title="Mute">M</button>
+      <input class="gain" type="range" min="-60" max="6" step="0.5" value="0" aria-label="Gain">
+      <span class="gain-read mono">0.0</span>
+      <span class="level" aria-hidden="true"><span></span></span>
+      <a class="lane-save" title="Save this stem">Save</a>
+    </div>
+    <div class="lane-wave">
+      <canvas></canvas>
+      <span class="lane-hover mono"></span>
+    </div>
+  </div>
+</template>
 </body>
 </html>
