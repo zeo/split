@@ -162,7 +162,9 @@ def test_web_assets_are_clean_utf8():
     for asset in paths.web_dir().glob("*.*"):
         if asset.suffix in {".js", ".css", ".html"}:
             text = asset.read_bytes().decode("utf-8")
-            assert "Â" not in text and "â€" not in text, f"mojibake in {asset.name}"
+            # utf-8 bytes of a middle dot or curly quote decoded as cp1252
+            broken = (chr(0xC2) + chr(0xB7), chr(0xE2) + chr(0x20AC))
+            assert not any(b in text for b in broken), f"mojibake in {asset.name}"
 
 
 def test_ui_assets_are_revalidated(client):

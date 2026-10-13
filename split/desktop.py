@@ -198,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
         text_select=False,
         frameless=CUSTOM_CHROME,
         easy_drag=False,
+        # scripted runs drive the app over its api without putting a window on screen
+        hidden=os.environ.get("SPLIT_WINDOW") == "hidden",
     )
     bridge._attach(window)
     app.state.focus = lambda: (window.restore(), window.show())

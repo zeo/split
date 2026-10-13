@@ -127,7 +127,8 @@ function renderTier() {
     const model = state.catalog.models[id];
     const item = document.createElement("li");
     const name = document.createElement("span");
-    name.textContent = `${model.author} ${model.label}`;
+    name.textContent = model.label;
+    name.title = `${model.label} by ${model.author}`;
     const side = document.createElement("span");
     side.className = model.present ? "license" : "license pending";
     side.textContent = model.present ? model.license.replace("Not stated by the author", "license unstated") : megabytes(model.missing);
@@ -533,7 +534,8 @@ async function openSession(job) {
   const session = { id: job.id, job, lanes: [], ready: false };
   state.session = session;
   $("session-name").textContent = job.name;
-  $("session-meta").textContent = `${taskLine(job)} · ${formatTime(job.duration)}`;
+  const trim = job.trim_db ? ` · trimmed ${Math.abs(job.trim_db).toFixed(1)} dB to stay under 0 dBFS` : "";
+  $("session-meta").textContent = `${taskLine(job)} · ${formatTime(job.duration)}${trim}`;
   $("clock-total").textContent = `/ ${formatTime(job.duration)}`;
   $("export").classList.toggle("hidden", !native());
   $("mix-note").classList.add("hidden");
@@ -1025,13 +1027,25 @@ function onSnapshot(snapshot) {
   renderStage();
 }
 
+// #job=<id>&task=<id>&style=<id>&theme=<id> opens a view directly; style and theme apply to this load only.
+// #still renders one snapshot without the live stream, for headless captures that wait on network idle
+function readLink() {
+  const link = new URLSearchParams(location.hash.slice(1));
+  if (link.has("style")) look.style = link.get("style");
+  if (link.has("theme")) look.theme = link.get("theme");
+  if (link.has("task")) state.task = link.get("task");
+  if (link.has("job")) state.selected = link.get("job");
+}
+
 async function boot() {
+  readLink();
   applyLook();
   const [system] = await Promise.all([api.get("/api/system"), refreshCatalog()]);
   $("version").textContent = `v${system.version}`;
   $("data-dir").textContent = system.data_dir;
   renderStage();
-  subscribe(onSnapshot);
+  if (new URLSearchParams(location.hash.slice(1)).has("still")) onSnapshot(await api.get("/api/state"));
+  else subscribe(onSnapshot);
   whenNative(() => $("export").classList.toggle("hidden", !state.session));
   requestAnimationFrame(frame);
 }

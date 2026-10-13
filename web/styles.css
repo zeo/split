@@ -352,8 +352,8 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
 }
 .sidebar-label { display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 18px 8px; font-size: 11px; color: var(--mute); font-family: var(--mono); }
 .sidebar-label-mark { width: 8px; height: 8px; background: var(--accent); flex: none; }
-.module { margin: 0 10px 10px; padding: 10px 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-card); background: color-mix(in srgb, var(--surface) 55%, transparent); box-shadow: var(--seam); }
-.module-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; margin: 0 0 10px; }
+.module { margin: 0 10px 8px; padding: 9px 10px 10px; border: 1px solid var(--rule); border-radius: var(--r-card); background: color-mix(in srgb, var(--surface) 55%, transparent); box-shadow: var(--seam); }
+.module-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; margin: 0 0 8px; }
 .module-head h2 { font: 500 11px var(--mono); color: var(--text); letter-spacing: 0.02em; }
 .module-index {
   display: grid;
@@ -375,7 +375,7 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 32px;
+  min-height: 29px;
   padding: 0 10px;
   border: 1px solid transparent;
   border-radius: var(--r-pill);
