@@ -1,0 +1,72 @@
+[project]
+name = "split"
+dynamic = ["version"]
+description = "Local stem separation studio"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "audio-separator[cpu]==0.47.0",
+    "torch==2.13.0",
+    "audioread>=3",
+    "numpy>=2",
+    "soundfile>=0.13",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "python-multipart>=0.0.20",
+]
+
+[project.optional-dependencies]
+desktop = [
+    "pywebview>=6.2",
+    "pythonnet>=3.1; sys_platform == 'win32'",
+]
+
+[project.scripts]
+split = "split.cli:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28",
+    "pytest>=8.4",
+    "ruff>=0.14",
+]
+build = [
+    "pyinstaller>=6.16",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "split/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["split"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"web" = "split/web"
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["SIM905"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

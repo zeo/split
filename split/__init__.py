@@ -1,5 +1,3 @@
-"""Split - local studio-grade stem splitter."""
-from .engine import SeparationEngine, SeparationResult, separate_file
+"""Split: local stem separation studio."""
 
-__all__ = ["SeparationEngine", "SeparationResult", "separate_file"]
-__version__ = "0.1.0"
+__version__ = "0.3.0"

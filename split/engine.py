@@ -1,351 +1,418 @@
-"""Unified separation engine: RoFormer/MDX (audio-separator) + Demucs fallback.
+"""Separation pipeline. Everything here runs inside the worker process started by jobs.py."""
 
-Quality ladder (published vocal SDR):
-  Viperx-1297 12.98 · Kim 12.6 · htdemucs_ft 10.8
-"""
 from __future__ import annotations
 
+import logging
+import math
+import os
 import re
 import shutil
-import subprocess
-import tempfile
-from dataclasses import dataclass
+import sys
+import time
+import traceback
+import types
+import urllib.error
+from collections.abc import Callable
 from pathlib import Path
 
-from .models import ModelInfo, get_model
+from . import media, paths, weights
+from .catalog import MODELS, Model, Step, plan
 
-OUTPUT_FORMATS = ("mp3", "wav", "flac")
+Emit = Callable[..., None]
 
-
-def _default_model_dir() -> Path:
-    import sys
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent / "models_cache"
-    return Path(__file__).resolve().parent.parent / "models_cache"
+_OUTPUT_LABEL = re.compile(r"_\(([^)]+)\)")
 
 
-MODEL_DIR = _default_model_dir()
+class _Bar:
+    """Stands in for tqdm inside audio-separator so chunk progress reaches the UI."""
 
+    sink: Callable[[float], None] | None = None
 
-def ffmpeg_bin() -> str:
-    """Resolve ffmpeg: bundled exe next to the app first, then PATH."""
-    import sys
-    candidates = []
-    try:
-        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-        candidates += [base / "ffmpeg.exe", base / "_internal" / "ffmpeg.exe", base / "bin" / "ffmpeg.exe"]
-    except Exception:
+    def __init__(self, iterable=None, total=None, *args, **kwargs):
+        self.iterable = iterable
+        if total is None and iterable is not None and hasattr(iterable, "__len__"):
+            total = len(iterable)
+        self.total = total
+        self.n = 0
+
+    def __iter__(self):
+        for item in self.iterable:
+            yield item
+            self.update()
+
+    def update(self, n=1):
+        self.n += n
+        if _Bar.sink and self.total:
+            _Bar.sink(min(1.0, self.n / self.total))
+
+    def close(self):
         pass
-    candidates.append(Path(__file__).resolve().parent.parent / "tools" / "ffmpeg.exe")
-    for c in candidates:
+
+    def set_description(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _silence_progress_bars() -> None:
+    from audio_separator.separator import separator
+    from audio_separator.separator.architectures import mdxc_separator
+    from audio_separator.separator.uvr_lib_v5.demucs import apply, utils
+
+    for module in (separator, mdxc_separator):
+        module.tqdm = _Bar
+    for module in (apply, utils):
+        module.tqdm = types.SimpleNamespace(tqdm=_Bar)
+
+
+def _rotate_fast(rotary_embed, tensor):
+    """Rotary embedding in the tensor's own dtype with cached angles.
+
+    audio-separator's version upcasts every query and key to float32, rebuilds cos/sin, and
+    concatenates on each call, which costs more than the attention it feeds on a 20 s chunk.
+    """
+    import torch
+
+    seq_dim = rotary_embed.default_seq_dim
+    key = (tensor.shape[seq_dim], tensor.dtype, tensor.device, seq_dim)
+    cache = rotary_embed.__dict__.setdefault("_split_angles", {})
+    if key not in cache:
+        positions = rotary_embed.get_seq_pos(key[0], device=tensor.device, dtype=torch.float32)
+        angles = torch.outer(positions, rotary_embed.freqs.detach().to(tensor.device, torch.float32))
+        if seq_dim == -3:
+            angles = angles[:, None, :]
+        cache[key] = (angles.cos().to(tensor.dtype), angles.sin().to(tensor.dtype))
+    cos, sin = cache[key]
+    even, odd = tensor.unflatten(-1, (-1, 2)).unbind(-1)
+    return torch.stack((even * cos - odd * sin, odd * cos + even * sin), dim=-1).flatten(-2)
+
+
+def _speed_up_roformers() -> None:
+    import torch
+    from audio_separator.separator.uvr_lib_v5.roformer import attend, bs_roformer, mel_band_roformer
+
+    plain = bs_roformer._rotate_queries_or_keys
+
+    def rotate(rotary_embed, tensor):
+        full_width = rotary_embed.freqs.shape[-1] * 2 == tensor.shape[-1]
+        if tensor.device.type != "cuda" or not full_width or rotary_embed.learned_freq:
+            return plain(rotary_embed, tensor)
+        return _rotate_fast(rotary_embed, tensor)
+
+    bs_roformer._rotate_queries_or_keys = rotate
+    mel_band_roformer._rotate_queries_or_keys = rotate
+
+    # upstream only allows the flash kernel on an a100; every sm80+ card supports it in fp16
+    setup = attend.Attend.__init__
+
+    def init(self, *args, **kwargs):
+        setup(self, *args, **kwargs)
+        if self.flash and torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8:
+            self.cuda_config = attend.FlashAttentionConfig(True, True, True)
+
+    attend.Attend.__init__ = init
+
+
+def _separator_class():
+    from audio_separator.separator import Separator
+
+    class CatalogSeparator(Separator):
+        force_cpu = False
+
+        def setup_torch_device(self, system_info):
+            if not self.force_cpu:
+                return super().setup_torch_device(system_info)
+            import torch
+
+            self.torch_device_cpu = self.torch_device = torch.device("cpu")
+            self.onnx_execution_provider = ["CPUExecutionProvider"]
+
+        # answer from split's pinned catalog so loading never consults the network
+        def list_supported_model_files(self):
+            grouped = {"MDXC": {}, "Demucs": {}}
+            for model in MODELS.values():
+                group = "Demucs" if model.arch == "demucs" else "MDXC"
+                grouped[group][model.id] = {
+                    "filename": model.load_name,
+                    "scores": {},
+                    "stems": [],
+                    "target_stem": None,
+                    "download_files": [f.name for f in model.files],
+                }
+            return grouped
+
+    return CatalogSeparator
+
+
+def _has_kernels(major: int, minor: int, arch_list: list[str]) -> bool:
+    # cubins run on any card with the same major version and an equal or newer minor
+    built = [(int(a[3:-1]), int(a[-1])) for a in arch_list if a.startswith("sm_")]
+    return any(m == major and n <= minor for m, n in built)
+
+
+def describe_device() -> dict:
+    """Pick the inference device. Must run before anything initializes CUDA."""
+    if os.environ.get("SPLIT_DEVICE") == "cpu":
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    import torch
+
+    cpu = {"kind": "cpu", "name": "CPU", "memory": 0, "note": ""}
+    if torch.cuda.is_available():
+        props = torch.cuda.get_device_properties(0)
+        if not _has_kernels(props.major, props.minor, torch.cuda.get_arch_list()):
+            # this torch build carries no kernels for the card; run on the cpu instead of crashing
+            return {**cpu, "note": f"{props.name} is too old for this build, using the CPU"}
+        return {"kind": "cuda", "name": props.name, "memory": props.total_memory, "note": ""}
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return {"kind": "mps", "name": "Apple GPU", "memory": 0, "note": ""}
+    return cpu
+
+
+class Runner:
+    def __init__(self) -> None:
+        self.device = describe_device()
+        _silence_progress_bars()
+        _speed_up_roformers()
+        self.separator = None
+
+    def _load(self, model: Model, output_dir: Path):
+        if self.separator is None:
+            separator_class = _separator_class()
+            separator_class.force_cpu = self.device["kind"] == "cpu"
+            self.separator = separator_class(
+                log_level=logging.ERROR,
+                model_file_dir=str(paths.models_dir()),
+                output_dir=str(output_dir),
+                output_format="WAV",
+                normalization_threshold=1.0,
+                use_soundfile=True,
+                sample_rate=media.WORK_RATE,
+                use_autocast=self.device["kind"] == "cuda",
+                mdxc_params={
+                    "segment_size": 256,
+                    "override_model_segment_size": False,
+                    "batch_size": None,
+                    "overlap": None,
+                    "pitch_shift": 0,
+                },
+                demucs_params={
+                    "segment_size": "Default",
+                    "shifts": 1,
+                    "overlap": 0.25,
+                    "segments_enabled": True,
+                },
+            )
+        separator = self.separator
+        separator.load_model(model.load_name)
+        separator.output_dir = str(output_dir)
+        instance = separator.model_instance
+        instance.output_dir = str(output_dir)
+        # audio-separator peak-normalizes the mix and every stem on its own, which breaks
+        # the stems-sum-to-mix property; float intermediates have the headroom to skip it
+        instance.normalization_threshold = math.inf
+        return separator
+
+    def _run_model(
+        self, model: Model, source: Path, out: Path, report: Callable[[float], None]
+    ) -> dict[str, Path]:
+        out.mkdir(parents=True, exist_ok=True)
+        separator = self._load(model, out)
+        _Bar.sink = report
         try:
-            if c.is_file():
-                return str(c)
-        except OSError:
-            pass
-    found = shutil.which("ffmpeg")
-    if found:
-        return found
-    raise RuntimeError("ffmpeg not found. Install ffmpeg on PATH, place ffmpeg.exe in tools/, or choose wav output.")
+            produced = separator.separate(str(source))
+        finally:
+            _Bar.sink = None
+        stems: dict[str, Path] = {}
+        for name in produced:
+            path = Path(name) if Path(name).is_absolute() else out / Path(name).name
+            # audio-separator appends _(stem)_model to the input name, which may carry its own label
+            labels = _OUTPUT_LABEL.findall(path.name)
+            raw = labels[-1].lower() if labels else ""
+            if raw not in model.stems:
+                raise RuntimeError(f"{model.label} produced an unexpected stem '{raw}'")
+            stems[model.stems[raw]] = path
+        return stems
 
+    def separate(self, request: dict, emit: Emit) -> dict:
+        job_dir = Path(request["job_dir"])
+        work = job_dir / "work"
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(parents=True)
+        recipe = plan(request["task"], request["tier"], request.get("isolate", False))
+        wanted = request["stems"]
+        fmt = request["format"]
 
-@dataclass
-class SeparationRequest:
-    input_path: Path
-    output_dir: Path
-    model_id: str = "kim-vocals"
-    # legacy Demucs path params
-    model: str = ""  # demucs model name override (backend='demucs' only)
-    stems: list[str] | None = None
-    output_format: str = "mp3"
-    mp3_bitrate: int = 320
-    overlap: float = 0.25
-    shifts: int = 1
-    device: str = "auto"
-    jobs: int = 0
-    enhanced: bool = False  # higher overlap + single-stem focus for max quality
+        runs = sum(len(step.models) for step in recipe)
+        units = 1 + runs + 0.5 + 0.25 * len(wanted)
+        done = 0.0
 
+        def progress(phase: str, detail: str, local: float = 0.0, phase_fraction: float | None = None):
+            emit(
+                phase=phase,
+                detail=detail,
+                fraction=min(0.999, (done + local) / units),
+                phase_fraction=phase_fraction,
+            )
 
-@dataclass
-class SeparationResult:
-    stem_files: dict[str, Path]
-    model: str
-    output_dir: Path
-    sample_rate: int = 44100
+        progress("decode", "Reading audio")
+        mix = work / "mix.wav"
+        source = media.decode(Path(request["source"]), mix)
+        done += 1
+        emit(duration=source.duration, device=self.device["kind"])
 
+        available: dict[str, Path] = {"mix": mix}
+        finals: dict[str, list[Path]] = {}
+        run_index = 0
+        for step_index, step in enumerate(recipe):
+            results = []
+            for model_id in step.models:
+                model = MODELS[model_id]
+                run_index += 1
+                self._ensure_weights(
+                    model,
+                    lambda d, n, m=model: progress("download", f"Downloading {m.label}", 0.0, n and d / n),
+                )
+                position = f" ({run_index}/{runs})" if runs > 1 else ""
+                label = f"Separating with {model.label}{position}"
+                progress("separate", label, 0.0, 0.0)
+                out = work / f"step{step_index}" / model.id
+                results.append(
+                    self._run_model(
+                        model,
+                        available[step.input],
+                        out,
+                        lambda f, lab=label: progress("separate", lab, f, f),
+                    )
+                )
+                done += 1
+            merged = self._combine(step, results, work / f"step{step_index}" / "combined")
+            available.update(merged)
+            for stem, final in step.outputs.items():
+                finals.setdefault(final, []).append(merged[stem])
 
-def resolve_device(requested: str) -> str:
-    if requested in ("cuda", "cpu", "mps"):
-        return requested
-    try:
-        import torch
+        progress("encode", "Finishing stems")
+        outputs: dict[str, str] = {}
+        peaks_dir = job_dir / "peaks"
+        peaks_dir.mkdir(exist_ok=True)
+        for stem in wanted:
+            parts = finals[stem]
+            wav = parts[0]
+            if len(parts) > 1:
+                wav = work / f"{stem}.wav"
+                media.mix(parts, wav)
+            name = f"{stem}.{fmt}"
+            media.encode(wav, job_dir / name, fmt, source)
+            media.write_peaks(wav, peaks_dir / f"{stem}.json")
+            outputs[stem] = name
+            done += 0.25
+            progress("encode", f"Wrote {stem}")
+        shutil.rmtree(work, ignore_errors=True)
+        return {"outputs": outputs, "duration": source.duration}
 
-        if torch.cuda.is_available():
-            return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-        return "cpu"
-    except ImportError:
-        return "cpu"
+    def _combine(self, step: Step, results: list[dict[str, Path]], out: Path) -> dict[str, Path]:
+        if len(results) == 1:
+            return results[0]
+        import numpy as np
+        import soundfile as sf
+        from audio_separator.separator.ensembler import Ensembler
 
+        out.mkdir(parents=True, exist_ok=True)
+        ensembler = Ensembler(logging.getLogger("split.ensemble"), algorithm=step.algorithm)
+        merged = {}
+        for stem in results[0]:
+            waves = []
+            for result in results:
+                data, rate = sf.read(result[stem], dtype="float32", always_2d=True)
+                waves.append(np.ascontiguousarray(data.T))
+            combined = ensembler.ensemble(waves)
+            path = out / f"{stem}.wav"
+            sf.write(path, combined.T, rate, subtype="FLOAT")
+            merged[stem] = path
+        return merged
 
-class SeparationEngine:
-    _beartype_patched = False
+    def _ensure_weights(self, model: Model, report: Callable[[int, int], None]) -> None:
+        if weights.missing_files(model):
+            weights.fetch(model, report)
 
-    def __init__(self, default_device: str = "auto"):
-        self.default_device = default_device
-
-    @classmethod
-    def _patch_beartype(cls):
-        """beartype 0.18 rejects `collections.abc.Callable | None` hints used by
-        audio-separator's RoFormer arch on Python 3.14. Neutralize the decorator
-        (type checks only — no behavior change to inference)."""
-        if cls._beartype_patched:
-            return
-        try:
-            import beartype
-
-            def _noop(*a, **k):
-                if len(a) == 1 and callable(a[0]) and not k:
-                    return a[0]
-
-                def wrap(f):
-                    return f
-
-                return wrap
-
-            beartype.beartype = _noop
-        except ImportError:
-            pass
-        cls._beartype_patched = True
-
-    _packaging_patched = False
-
-    @classmethod
-    def _patch_packaging(cls):
-        """Frozen exes (PyInstaller) ship no .dist-info, so
-        importlib.metadata.distribution('audio-separator') raises
-        PackageNotFoundError and Separator.__init__ crashes on
-        `get_package_distribution(...).version`. Stub it to a fixed
-        version string — logging-only, no inference impact."""
-        if cls._packaging_patched:
-            return
-        try:
-            from audio_separator.separator.separator import Separator
-
-            _orig = Separator.get_package_distribution
-
-            def _safe(self, package_name):
-                try:
-                    dist = _orig(self, package_name)
-                except Exception:
-                    dist = None
-                if dist is None:
-                    class _Frozen:
-                        version = "0.47.0-frozen"
-
-                    return _Frozen()
-                return dist
-
-            Separator.get_package_distribution = _safe
-        except ImportError:
-            pass
-        cls._packaging_patched = True
-
-    def separate(self, req: SeparationRequest, on_progress=None) -> SeparationResult:
-        model = get_model(req.model_id or "kim-vocals")
-        req.output_dir.mkdir(parents=True, exist_ok=True)
-        if model.backend in ("roformer", "roformer-ensemble"):
-            return self._separate_roformer(req, model, on_progress)
-        return self._separate_demucs(req, model, on_progress)
-
-    # ---------------- RoFormer / MDX via audio-separator ----------------
-    def _separate_roformer(self, req: SeparationRequest, model: ModelInfo, on_progress) -> SeparationResult:
-        self._patch_beartype()
-        self._patch_packaging()
-        from audio_separator.separator import Separator
-
-        device = resolve_device(req.device if req.device else self.default_device)
-        fmt = req.output_format.upper() if req.output_format != "mp3" else "MP3"
-        is_ensemble = model.backend == "roformer-ensemble"
-        overlap = req.overlap if 0 < req.overlap < 1 else 0.25
-        if req.enhanced and not is_ensemble:
-            overlap = max(overlap, 0.5)  # denser windows, cleaner edges
-        if on_progress:
-            action = f"Loading ensemble {model.label}" if is_ensemble else f"Loading {model.label}"
-            on_progress(0.03, f"{action} on {device}")
-
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        sep = Separator(
-            model_file_dir=str(MODEL_DIR),
-            output_dir=str(req.output_dir),
-            output_format=fmt,
-            normalization_threshold=0.9,
-            output_single_stem="vocals" if (req.enhanced and "vocals" in model.stems) else None,
-            use_autocast=(device == "cuda"),
-            mdx_params={
-                "hop_length": 1024,
-                "segment_size": 256,
-                "overlap": overlap,
-                "batch_size": 1,
-                "enable_denoise": False,
-            },
-            mdxc_params={
-                "segment_size": 256,
-                "overlap": 8 if req.enhanced else 2,  # more segment passes = fewer artifacts
-                "batch_size": 1,
-                "pitch_shift": 0,
-            },
-            ensemble_preset=model.filename if is_ensemble else None,
+    def download(self, model_id: str, emit: Emit) -> None:
+        model = MODELS[model_id]
+        weights.fetch(
+            model,
+            lambda d, n: emit(
+                phase="download",
+                detail=f"Downloading {model.label}",
+                fraction=n and d / n,
+                phase_fraction=n and d / n,
+            ),
         )
-        if on_progress:
-            on_progress(0.08, "Preparing models")
-        if is_ensemble:
-            # Bare load_model() with the default filename arg makes the
-            # Separator materialize the preset's model list (see
-            # Separator.load_model: preset models swap in when the default
-            # filename is passed).
-            sep.load_model()
-        else:
-            sep.load_model(model_filename=model.filename)
-        if on_progress:
-            on_progress(0.15, f"Separating with {model.label}")
-
-        # deterministic stem filenames: <track>_<stem>.<ext>
-        custom = {s: f"{req.input_path.stem}_{s}" for s in (req.stems or model.stems)}
-        outputs: list[str] = sep.separate(str(req.input_path))
-        if on_progress:
-            on_progress(0.95, "Finalizing stems")
-
-        stem_files = self._map_roformer_outputs(outputs, model, req)
-        if req.output_format == "mp3":
-            stem_files = self._ensure_mp3_bitrate(stem_files, req)
-        if not stem_files:
-            raise RuntimeError(f"{model.id} produced no stems for {req.input_path.name}")
-        if on_progress:
-            on_progress(1.0, "Done")
-        return SeparationResult(stem_files=stem_files, model=model.id, output_dir=req.output_dir)
-
-    def _map_roformer_outputs(self, outputs: list[str], model: ModelInfo, req: SeparationRequest) -> dict[str, Path]:
-        wanted = [s.lower() for s in (req.stems or model.stems)]
-        mapped: dict[str, Path] = {}
-        for out in outputs:
-            p = Path(out)
-            if not p.is_absolute() and not p.exists():
-                # audio-separator may return paths relative to CWD
-                candidate = req.output_dir / p.name
-                if candidate.exists():
-                    p = candidate
-            stem = self._classify_stem(p, model)
-            if stem in wanted and stem not in mapped:
-                dest = req.output_dir / f"{req.input_path.stem}_{stem}{p.suffix.lower()}"
-                if p.resolve() != dest.resolve():
-                    if dest.exists():
-                        dest.unlink()
-                    p.rename(dest)
-                mapped[stem] = dest
-        # remove unmapped leftovers from previous runs with same track name
-        return mapped
-
-    def _classify_stem(self, path: Path, model: ModelInfo) -> str:
-        name = path.stem.lower()
-        # custom names we passed: <track>_<stem>
-        for stem in model.stems:
-            if name.endswith("_" + stem.lower()):
-                return stem
-        # audio-separator default: <track>_(<stem>)_<model>.wav — the
-        # parenthesized token is the true stem label
-        for token in re.findall(r"\(([^)]+)\)", path.stem):
-            token = token.strip().lower()
-            if token in model.aliases:
-                return model.aliases[token]
-            for stem in model.stems:
-                if token == stem.lower():
-                    return stem
-        # last resort: alias lookup on full name
-        for token, stem in model.aliases.items():
-            if token in name:
-                return stem
-        return name
-
-    def _ensure_mp3_bitrate(self, stems: dict[str, Path], req: SeparationRequest) -> dict[str, Path]:
-        out: dict[str, Path] = {}
-        for stem, p in stems.items():
-            if p.suffix.lower() == ".mp3":
-                out[stem] = p
-                continue
-            dest = req.output_dir / f"{req.input_path.stem}_{stem}.mp3"
-            cmd = [ffmpeg_bin(), "-y", "-v", "error", "-i", str(p),
-                   "-codec:a", "libmp3lame", "-b:a", f"{req.mp3_bitrate}k", str(dest)]
-            subprocess.run(cmd, check=True)
-            out[stem] = dest
-        return out
-
-    # ---------------- Demucs via subprocess ----------------
-    def _separate_demucs(self, req: SeparationRequest, model: ModelInfo, on_progress) -> SeparationResult:
-        demucs_model = req.model or model.filename
-        device = resolve_device(req.device if req.device else self.default_device)
-        if on_progress:
-            on_progress(0.02, f"Loading model {demucs_model} on {device}")
-
-        with tempfile.TemporaryDirectory(prefix="split_") as tmp:
-            cmd = ["python", "-m", "demucs.separate", "-n", demucs_model,
-                   "--out", tmp, "-d", device, "--overlap", str(req.overlap)]
-            if req.shifts and req.shifts > 1:
-                cmd += ["--shifts", str(req.shifts)]
-            if req.jobs:
-                cmd += ["-j", str(req.jobs)]
-            cmd += [str(req.input_path)]
-
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                if on_progress and "%" in line:
-                    try:
-                        pct = float(line.strip().split("%")[0].split()[-1]) / 100.0
-                        on_progress(0.02 + pct * 0.85, f"Separating ({line.strip()[:60]})")
-                    except ValueError:
-                        pass
-            if proc.wait() != 0:
-                raise RuntimeError(f"demucs failed for {req.input_path.name}")
-
-            produced = Path(tmp) / demucs_model / req.input_path.stem
-            if not produced.exists():
-                subs = [d for d in (Path(tmp) / demucs_model).iterdir() if d.is_dir()]
-                if not subs:
-                    raise RuntimeError("demucs produced no output directory")
-                produced = subs[0]
-
-            wanted = req.stems or model.stems
-            stem_files: dict[str, Path] = {}
-            for stem in wanted:
-                src = produced / f"{stem}.wav"
-                if not src.exists():
-                    continue
-                dest = req.output_dir / f"{req.input_path.stem}_{stem}.{req.output_format}"
-                if on_progress:
-                    on_progress(0.9, f"Encoding {stem}.{req.output_format}")
-                self._convert(src, dest, req.output_format, req.mp3_bitrate)
-                stem_files[stem] = dest
-            if on_progress:
-                on_progress(1.0, "Done")
-            return SeparationResult(stem_files=stem_files, model=model.id, output_dir=req.output_dir)
-
-    def _convert(self, src: Path, dest: Path, fmt: str, mp3_bitrate: int) -> None:
-        if fmt == "wav" and src.suffix == ".wav":
-            shutil.copy(src, dest)
-            return
-        cmd = [ffmpeg_bin(), "-y", "-v", "error", "-i", str(src)]
-        if fmt == "mp3":
-            cmd += ["-codec:a", "libmp3lame", "-b:a", f"{mp3_bitrate}k"]
-        elif fmt == "flac":
-            cmd += ["-codec:a", "flac"]
-        else:
-            cmd += ["-codec:a", "pcm_s16le"]
-        cmd.append(str(dest))
-        subprocess.run(cmd, check=True)
 
 
-def separate_file(input_path: str | Path, output_dir: str | Path, **kwargs) -> SeparationResult:
-    req = SeparationRequest(input_path=Path(input_path), output_dir=Path(output_dir), **kwargs)
-    return SeparationEngine().separate(req)
+def classify_error(exc: BaseException) -> tuple[str, str]:
+    name = type(exc).__name__
+    if "OutOfMemory" in name or "out of memory" in str(exc).lower():
+        return "oom", "The GPU ran out of memory. Close other GPU-heavy apps or pick a lighter quality tier."
+    if isinstance(exc, media.MediaError):
+        return "input", str(exc)
+    if isinstance(exc, urllib.error.URLError | TimeoutError | ConnectionError):
+        return "network", "Could not download the model. Check your connection and try again."
+    if isinstance(exc, OSError) and "integrity" in str(exc):
+        return "network", str(exc)
+    if isinstance(exc, FileNotFoundError) and "ffmpeg" in str(exc):
+        return "setup", str(exc)
+    return "internal", f"{name}: {exc}"
+
+
+def _emitter(outbox, key: str) -> Emit:
+    last = 0.0
+
+    def emit(**event) -> None:
+        nonlocal last
+        now = time.monotonic()
+        # phase boundaries always go through; chunk ticks are capped at ten a second
+        if event.get("phase") is None or event.get("phase_fraction") in (0.0, 1.0) or now - last > 0.1:
+            last = now
+            outbox.put({"type": "progress", "key": key, **event})
+
+    return emit
+
+
+def worker_main(inbox, outbox) -> None:
+    """Serve separation and download requests one at a time until told to stop."""
+    paths.log_to_file_if_headless("worker")
+    paths.expose_ffmpeg()
+    logging.basicConfig(level=logging.WARNING)
+    try:
+        runner = Runner()
+    except BaseException as exc:
+        kind, message = classify_error(exc)
+        outbox.put({"type": "fatal", "kind": kind, "message": message})
+        return
+    outbox.put({"type": "ready", "device": runner.device})
+    while (request := inbox.get()) is not None:
+        key = request["key"]
+        emit = _emitter(outbox, key)
+        try:
+            if request["kind"] == "separate":
+                result = runner.separate(request, emit)
+            else:
+                runner.download(request["model"], emit)
+                result = {}
+            outbox.put({"type": "done", "key": key, **result})
+        except BaseException as exc:
+            kind, message = classify_error(exc)
+            outbox.put(
+                {
+                    "type": "error",
+                    "key": key,
+                    "kind": kind,
+                    "message": message,
+                    "trace": "".join(traceback.format_exception(exc))[-4000:],
+                }
+            )
+            if isinstance(exc, KeyboardInterrupt):
+                break
+    sys.exit(0)
