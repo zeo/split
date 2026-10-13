@@ -68,16 +68,44 @@ def self_test(report_path: str | None) -> int:
     return 0
 
 
-class Bridge:
-    """Native dialogs for the page; everything else goes through the HTTP API."""
+# hit-test codes the native move and size loops understand
+HIT = {"move": 2, "w": 10, "e": 11, "n": 12, "nw": 13, "ne": 14, "s": 15, "sw": 16, "se": 17}
+CUSTOM_CHROME = sys.platform == "win32"
 
+
+def _native_loop(hwnd: int, hit: int) -> None:
+    """Hand the drag to Windows so moving and resizing get snap, edge glue and full frame rate."""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    user32.ReleaseCapture()
+    user32.PostMessageW(hwnd, 0x00A1, hit, 0)  # WM_NCLBUTTONDOWN
+
+
+def _round_corners(hwnd: int) -> None:
+    import ctypes
+
+    preference = ctypes.c_int(2)  # DWMWCP_ROUND
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(preference), ctypes.sizeof(preference))
+
+
+class Bridge:
+    """Native dialogs and window chrome for the page; everything else goes through the HTTP API."""
+
+    # pywebview exposes every public attribute to the page and walks it recursively,
+    # so the window handle has to stay private
     def __init__(self) -> None:
-        self.window = None
+        self._window = None
+        self._hwnd = 0
+        self._maximized = False
+
+    def chrome(self) -> dict:
+        return {"custom": CUSTOM_CHROME, "maximized": self._maximized}
 
     def pick_files(self) -> list[str]:
         import webview
 
-        chosen = self.window.create_file_dialog(
+        chosen = self._window.create_file_dialog(
             webview.FileDialog.OPEN, allow_multiple=True, file_types=(AUDIO_FILTER, "All files (*.*)")
         )
         return list(chosen or [])
@@ -85,8 +113,45 @@ class Bridge:
     def pick_folder(self) -> str | None:
         import webview
 
-        chosen = self.window.create_file_dialog(webview.FileDialog.FOLDER)
+        chosen = self._window.create_file_dialog(webview.FileDialog.FOLDER)
         return chosen[0] if chosen else None
+
+    def window_drag(self, edge: str = "move") -> None:
+        if self._hwnd and edge in HIT and not (self._maximized and edge != "move"):
+            _native_loop(self._hwnd, HIT[edge])
+
+    def window_minimize(self) -> None:
+        self._window.minimize()
+
+    def window_toggle(self) -> None:
+        if self._maximized:
+            self._window.restore()
+            return
+        # a borderless form maximizes over the taskbar unless told where the work area ends
+        from System.Windows.Forms import Screen
+
+        form = self._window.native
+        form.MaximizedBounds = Screen.FromHandle(form.Handle).WorkingArea
+        self._window.maximize()
+
+    def window_close(self) -> None:
+        self._window.destroy()
+
+    def _attach(self, window) -> None:
+        self._window = window
+
+        def shown() -> None:
+            if CUSTOM_CHROME:
+                self._hwnd = int(window.native.Handle.ToInt64())
+                _round_corners(self._hwnd)
+
+        def state(maximized: bool) -> None:
+            self._maximized = maximized
+            window.evaluate_js(f"window.splitChrome && window.splitChrome({str(maximized).lower()})")
+
+        window.events.shown += shown
+        window.events.maximized += lambda: state(True)
+        window.events.restored += lambda: state(False)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -129,10 +194,12 @@ def main(argv: list[str] | None = None) -> int:
         width=1320,
         height=860,
         min_size=(980, 640),
-        background_color="#101418",
+        background_color="#0f1317",
         text_select=False,
+        frameless=CUSTOM_CHROME,
+        easy_drag=False,
     )
-    bridge.window = window
+    bridge._attach(window)
     app.state.focus = lambda: (window.restore(), window.show())
     if files:
         app.state.open_files(files)
@@ -151,7 +218,10 @@ def main(argv: list[str] | None = None) -> int:
             gui="edgechromium" if sys.platform == "win32" else None,
             private_mode=False,
             storage_path=str(paths.data_root() / "webview"),
-            icon=str(paths.bundle_dir() / "assets" / "icon-1024.png"),
+            # winforms only takes .ico; the other backends want an image file
+            icon=str(
+                paths.bundle_dir() / "assets" / ("icon.ico" if sys.platform == "win32" else "icon-1024.png")
+            ),
         )
     finally:
         instance.unlink(missing_ok=True)

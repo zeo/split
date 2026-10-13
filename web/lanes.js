@@ -2,7 +2,7 @@
 
 const shape = (value) => Math.min(1, value ** 0.62);
 
-export function drawWave(canvas, peaks, color) {
+export function drawWave(canvas, peaks, color, strength = 1) {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
   if (!width || !height) return;
@@ -22,7 +22,7 @@ export function drawWave(canvas, peaks, color) {
 
   pen.fillStyle = color;
   for (const [values, alpha] of [[peaks.peak, Number(dim)], [peaks.rms, 1]]) {
-    pen.globalAlpha = alpha;
+    pen.globalAlpha = alpha * strength;
     pen.beginPath();
     for (let column = 0; column < columns; column++) {
       const from = Math.floor((column * buckets) / columns);

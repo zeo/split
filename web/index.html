@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-style="mk2">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,100 +12,128 @@
 </head>
 <body>
 <div class="shell">
-  <aside class="rail" aria-label="Separation settings">
-    <header class="rail-head">
-      <span class="wordmark">Split</span>
-      <span class="device mono" id="device" title="Inference device">starting</span>
-    </header>
+  <header class="titlebar" id="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-mark">split</span>
+      <span class="mark-tag proper" aria-hidden="true">MK II</span>
+      <span class="titlebar-path"><span>studio</span><span class="path-sep">/</span><span class="proper" id="title-session"></span></span>
+      <div class="keygroup" role="toolbar" aria-label="Quick actions">
+        <button class="qc" id="add-files-top" type="button" title="Add files (Ctrl+O)"><span class="qc-glyph">+</span>Add</button>
+        <button class="qc" id="open-models" type="button">Models</button>
+        <button class="qc" id="open-look" type="button">Look</button>
+      </div>
+    </div>
+    <div class="window-controls hidden" id="window-controls">
+      <button type="button" id="win-min" aria-label="Minimize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10"/></svg></button>
+      <button type="button" id="win-max" aria-label="Maximize"><svg viewBox="0 0 10 10" aria-hidden="true"><path class="glyph-max" d="M.5.5h9v9h-9z"/><path class="glyph-restore" d="M2.5 2.5h7v7h-7zM.5 7.5v-7h7"/></svg></button>
+      <button type="button" id="win-close" aria-label="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
+    </div>
+  </header>
 
-    <nav class="tasks" id="tasks" aria-label="Task"></nav>
+  <aside class="sidebar" aria-label="Separation settings">
+    <p class="sidebar-label"><span class="sidebar-label-mark" aria-hidden="true"></span>split/studio</p>
 
-    <section class="setting" id="tier-block">
-      <h2>Quality</h2>
+    <section class="module">
+      <header class="module-head"><span class="module-index">A</span><h2>Task</h2><span class="module-meta" id="task-meta"></span></header>
+      <nav class="tasks" id="tasks" aria-label="Task"></nav>
+    </section>
+
+    <section class="module" id="tier-block">
+      <header class="module-head"><span class="module-index">B</span><h2>Quality</h2><span class="module-meta" id="tier-meta"></span></header>
       <div class="segmented" id="tiers" role="radiogroup" aria-label="Quality"></div>
       <p class="tier-blurb" id="tier-blurb"></p>
       <ul class="tier-models" id="tier-models"></ul>
     </section>
 
-    <section class="setting">
-      <h2>Stems</h2>
+    <section class="module">
+      <header class="module-head"><span class="module-index">C</span><h2>Stems</h2><span class="module-meta" id="stem-meta"></span></header>
       <div class="stem-picks" id="stem-picks"></div>
       <label class="toggle hidden" id="isolate-row">
         <input type="checkbox" id="isolate">
+        <span class="switch" aria-hidden="true"></span>
         <span>Isolate vocals first</span>
       </label>
     </section>
 
-    <section class="setting">
-      <h2>Format</h2>
+    <section class="module">
+      <header class="module-head"><span class="module-index">D</span><h2>Format</h2><span class="module-meta" id="format-meta"></span></header>
       <div class="segmented" id="formats" role="radiogroup" aria-label="Output format"></div>
-      <p class="format-note mono" id="format-note"></p>
+      <p class="format-note" id="format-note"></p>
     </section>
-
-    <footer class="rail-foot">
-      <button class="link" id="open-models" type="button">Models</button>
-      <button class="link" id="theme" type="button">Theme</button>
-      <span class="version mono" id="version"></span>
-    </footer>
   </aside>
 
   <main class="stage" id="stage">
     <section class="intake" id="intake">
-      <div class="intake-body">
-        <p class="intake-title">Drop songs here</p>
-        <p class="intake-sub">or <button class="link" id="add-files" type="button">choose files</button>. Anything ffmpeg can read works, including video.</p>
-        <ol class="route" id="route" aria-label="What happens to each file"></ol>
-        <p class="intake-note" id="first-run"></p>
+      <header class="view-head">
+        <h1 id="intake-title"></h1>
+        <p class="view-sub" id="intake-blurb"></p>
+      </header>
+      <dl class="spec" id="intake-spec"></dl>
+
+      <section class="staged hidden" id="staged" aria-label="Files ready to separate">
+        <div class="staged-head">
+          <h2 id="staged-title">Ready</h2>
+          <div class="btn-row">
+            <button class="btn ghost" id="clear-staged" type="button">Clear</button>
+            <button class="btn primary" id="go" type="button">Separate<kbd>enter</kbd></button>
+          </div>
+        </div>
+        <ol class="staged-list proper" id="staged-list"></ol>
+      </section>
+
+      <div class="dropzone" id="dropzone">
+        <span class="bay-label">input bay</span>
+        <p class="dropzone-title">Drop songs here</p>
+        <p class="dropzone-sub">or <button class="link" id="add-files" type="button">choose files</button>. Anything ffmpeg reads works, video included.</p>
       </div>
+
+      <h2 class="rule-head">Signal path</h2>
+      <div class="patch" id="route" aria-label="What happens to each file"></div>
+      <p class="intake-note" id="first-run"></p>
       <input type="file" id="file-input" multiple hidden accept="audio/*,video/*">
     </section>
 
-    <section class="staged hidden" id="staged" aria-label="Files ready to separate">
-      <div class="staged-head">
-        <h2 id="staged-title">Ready</h2>
-        <div class="staged-actions">
-          <button class="link" id="clear-staged" type="button">Clear</button>
-          <button class="primary" id="go" type="button">Separate<kbd>Enter</kbd></button>
+    <section class="session hidden" id="session" aria-label="Stems">
+      <header class="view-head">
+        <h1 class="proper" id="session-name"></h1>
+        <p class="view-sub" id="session-meta"></p>
+      </header>
+      <div class="transport">
+        <button class="play" id="play" type="button" aria-label="Play" title="Play (Space)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path class="glyph-play" d="M4.5 2.5v11l9-5.5z"/><path class="glyph-pause" d="M4 2.5h3v11H4zM9.5 2.5h3v11h-3z"/></svg>
+        </button>
+        <span class="clock" id="clock">0:00.0</span>
+        <span class="clock-total" id="clock-total">/ 0:00</span>
+        <span class="grow"></span>
+        <div class="btn-row">
+          <button class="btn" id="export" type="button">Export</button>
+          <button class="btn" id="zip" type="button">Zip</button>
+          <button class="btn ghost" id="reveal" type="button">Show files</button>
         </div>
       </div>
-      <ol class="staged-list mono" id="staged-list"></ol>
-    </section>
-
-    <section class="session hidden" id="session" aria-label="Stems">
-      <header class="transport">
-        <div class="session-title">
-          <h1 id="session-name"></h1>
-          <p class="session-meta mono" id="session-meta"></p>
-        </div>
-        <div class="transport-controls">
-          <button class="play" id="play" type="button" aria-label="Play" title="Play (Space)">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path class="glyph-play" d="M4 2.5v11l9-5.5z"/><path class="glyph-pause" d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z"/></svg>
-          </button>
-          <span class="clock mono" id="clock">0:00.0</span>
-          <span class="clock-total mono" id="clock-total">/ 0:00</span>
-        </div>
-        <div class="session-actions">
-          <button class="quiet" id="export" type="button">Export</button>
-          <button class="quiet" id="zip" type="button">Zip</button>
-          <button class="quiet" id="reveal" type="button">Show files</button>
-        </div>
-      </header>
       <p class="mix-note hidden" id="mix-note"></p>
       <div class="lanes" id="lanes">
+        <div class="ruler" id="ruler" aria-hidden="true"><span class="ruler-head">time</span><span class="ruler-ticks" id="ruler-ticks"></span></div>
         <div class="playhead" id="playhead" aria-hidden="true"></div>
       </div>
     </section>
 
     <section class="progress hidden" id="progress" aria-live="polite">
-      <h1 id="progress-name"></h1>
-      <p class="progress-task mono" id="progress-task"></p>
-      <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="meter"><span id="meter-fill"></span></div>
-      <p class="progress-detail" id="progress-detail"></p>
-      <p class="progress-clock mono" id="progress-clock"></p>
-      <p class="progress-error hidden" id="progress-error"></p>
-      <div class="progress-actions">
-        <button class="quiet" id="progress-cancel" type="button">Cancel</button>
-        <button class="primary hidden" id="progress-retry" type="button">Try again</button>
+      <header class="view-head">
+        <h1 class="proper" id="progress-name"></h1>
+        <p class="view-sub" id="progress-task"></p>
+      </header>
+      <div class="progress-card">
+        <div class="progress-line">
+          <span class="progress-detail" id="progress-detail"></span>
+          <span class="progress-clock" id="progress-clock"></span>
+        </div>
+        <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="meter"><span id="meter-fill"></span></div>
+        <p class="progress-error hidden" id="progress-error"></p>
+        <div class="btn-row">
+          <button class="btn ghost" id="progress-cancel" type="button">Cancel</button>
+          <button class="btn primary hidden" id="progress-retry" type="button">Try again</button>
+        </div>
       </div>
     </section>
   </main>
@@ -113,37 +141,80 @@
   <section class="dock" id="dock" aria-label="Queue and history">
     <header class="dock-head">
       <h2>Queue</h2>
-      <span class="dock-count mono" id="dock-count"></span>
+      <span class="dock-count" id="dock-count"></span>
     </header>
     <ol class="jobs" id="jobs"></ol>
   </section>
+
+  <footer class="statusbar" id="statusbar">
+    <span class="seg"><span class="led" id="device-led"></span><span class="seg-k">gpu</span><span class="seg-v proper" id="device">starting</span></span>
+    <span class="seg-sep" aria-hidden="true"></span>
+    <button class="seg seg-btn" id="seg-models" type="button"><span class="seg-k">models</span><span class="seg-v" id="models-ready"></span></button>
+    <span class="seg-sep" aria-hidden="true"></span>
+    <span class="seg"><span class="led" id="queue-led"></span><span class="seg-k">queue</span><span class="seg-v" id="queue-state">idle</span></span>
+    <span class="grow"></span>
+    <button class="seg seg-btn" id="open-help" type="button"><span class="seg-k">help</span><span class="seg-v proper">F1</span></button>
+    <span class="seg-sep" aria-hidden="true"></span>
+    <span class="seg"><span class="seg-v" id="version"></span></span>
+  </footer>
+
+  <div class="edges hidden" id="edges" aria-hidden="true">
+    <span data-edge="n"></span><span data-edge="s"></span><span data-edge="e"></span><span data-edge="w"></span>
+    <span data-edge="nw"></span><span data-edge="ne"></span><span data-edge="sw"></span><span data-edge="se"></span>
+  </div>
 </div>
 
 <dialog class="sheet" id="models-sheet" aria-labelledby="models-title">
   <header class="sheet-head">
     <h2 id="models-title">Models</h2>
-    <button class="link" id="close-models" type="button">Close</button>
+    <button class="btn ghost" data-close type="button">Close</button>
   </header>
-  <p class="sheet-sub">Weights download the first time a task needs them and stay in <span class="mono" id="data-dir"></span>. Each file is checked against a pinned SHA-256 before it is used.</p>
+  <p class="sheet-sub">Weights download the first time a task needs them and stay in <span class="mono proper" id="data-dir"></span>. Every file is checked against a pinned SHA-256 before it loads.</p>
   <ol class="model-list" id="model-list"></ol>
+</dialog>
+
+<dialog class="sheet small" id="look-sheet" aria-labelledby="look-title">
+  <header class="sheet-head">
+    <h2 id="look-title">Look</h2>
+    <button class="btn ghost" data-close type="button">Close</button>
+  </header>
+  <div class="sheet-body">
+    <div class="form-row">
+      <div><p class="form-label">Style</p><p class="form-hint">MK II is the house finish; Brass is the graphite and brass one</p></div>
+      <div class="segmented proper" id="style-pick" role="radiogroup" aria-label="Style"></div>
+    </div>
+    <div class="form-row">
+      <div><p class="form-label">Theme</p><p class="form-hint">System follows Windows</p></div>
+      <div class="segmented" id="theme-pick" role="radiogroup" aria-label="Theme"></div>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="sheet small" id="help-sheet" aria-labelledby="help-title">
+  <header class="sheet-head">
+    <h2 id="help-title">Keys</h2>
+    <button class="btn ghost" data-close type="button">Close</button>
+  </header>
+  <dl class="keys" id="keys"></dl>
 </dialog>
 
 <template id="lane-template">
   <div class="lane">
     <div class="lane-head">
       <span class="lane-swatch"></span>
+      <span class="lane-key"></span>
       <span class="lane-name"></span>
-      <span class="lane-key mono"></span>
       <button class="sm solo" type="button" title="Solo">S</button>
       <button class="sm mute" type="button" title="Mute">M</button>
       <input class="gain" type="range" min="-60" max="6" step="0.5" value="0" aria-label="Gain">
-      <span class="gain-read mono">0.0</span>
-      <span class="level" aria-hidden="true"><span></span></span>
+      <span class="gain-read"><span class="gain-db">0.0</span> dB</span>
       <a class="lane-save" title="Save this stem">Save</a>
+      <span class="ladder" aria-hidden="true"><span></span></span>
     </div>
     <div class="lane-wave">
-      <canvas></canvas>
-      <span class="lane-hover mono"></span>
+      <canvas class="wave-dim"></canvas>
+      <canvas class="wave-lit"></canvas>
+      <span class="lane-hover"></span>
     </div>
   </div>
 </template>

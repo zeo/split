@@ -48,5 +48,7 @@ BS-RoFormer SW is reported to be extracted from Apple Logic Pro. Its original up
 | soxr | 1.1.0 | LGPL-2.1-or-later | https://github.com/dofuuz/python-soxr |
 | ONNX Runtime | 1.31.0 | MIT | https://github.com/microsoft/onnxruntime |
 | Atkinson Hyperlegible Next and Mono | variable fonts from google/fonts | OFL-1.1 | https://github.com/google/fonts/tree/main/ofl |
+| Commit Mono | V143 | OFL-1.1 | https://github.com/eigilnikolajsen/commit-mono |
+| Hanken Grotesk | variable | OFL-1.1 | https://github.com/marcologous/hanken-grotesk |
 
 `diffq-fixed` comes in through audio-separator's Demucs code and carries a non-commercial license, which makes the packaged Windows build non-commercial as a whole. The full license texts of bundled components sit in `_internal/licenses` and next to each package inside `_internal`.

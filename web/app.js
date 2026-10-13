@@ -4,19 +4,18 @@ import { Mixer } from "./mixer.js";
 
 const $ = (id) => document.getElementById(id);
 
-const STEM_COLORS = {
-  vocals: "#d9b45a", instrumental: "#6f9fca", lead: "#e3a35c", backing: "#87b1a1",
-  drums: "#d9654a", bass: "#5c8fd8", other: "#99a877", guitar: "#c58bd0", piano: "#cdb791",
-  kick: "#d9654a", snare: "#e39a48", toms: "#ad7bd3", hihat: "#79b9c1", cymbals: "#cbc068",
-  dry: "#8dc1a8", reverb: "#7d8ed3", clean: "#8dc1a8", noise: "#ad9080", crowd: "#c98a69",
-};
+// one letter per task, shown in brackets in the sidebar and pressed to switch
+const TASK_KEYS = { vocals: "v", instrumental: "i", karaoke: "k", band4: "b", band6: "s", drums: "d", dereverb: "r", denoise: "n", crowd: "c" };
 const FORMAT_NOTES = {
   wav: "24-bit PCM at the source sample rate",
   flac: "24-bit lossless at the source sample rate",
   mp3: "320 kbps, for sharing rather than mixing",
 };
+const FORMAT_BITS = { wav: "24-bit", flac: "24-bit", mp3: "320k" };
 const STATUS_TEXT = { queued: "Waiting", cancelled: "Cancelled", done: "Done" };
-const colorOf = (stem) => STEM_COLORS[stem] ?? "#9aa5ab";
+// stem pigments live in the active style's tokens; canvas drawing needs the resolved value
+const stemVar = (stem) => `var(--stem-${stem}, var(--mute))`;
+const colorOf = (stem) => getComputedStyle(document.documentElement).getPropertyValue(`--stem-${stem}`).trim() || "#9a9a9a";
 const megabytes = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 
 const saved = JSON.parse(localStorage.getItem("split.settings") || "{}");
@@ -70,36 +69,43 @@ function radio(container, items, current, onPick) {
   }
 }
 
+function pickTask(id) {
+  state.task = id;
+  persist();
+  renderRail();
+}
+
 function renderTasks() {
   const nav = $("tasks");
   nav.replaceChildren();
   nav.setAttribute("role", "radiogroup");
-  const groups = [["separate", "Separate"], ["clean", "Clean up"]];
-  for (const [group, title] of groups) {
-    const heading = document.createElement("p");
-    heading.className = "task-group";
+  for (const [group, title] of [["separate", "Separate"], ["clean", "Clean up"]]) {
+    const heading = document.createElement("h2");
+    heading.className = "rule-head task-group";
     heading.textContent = title;
     nav.append(heading);
     for (const task of state.catalog.tasks.filter((t) => t.group === group)) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "task";
+      button.className = "nav-item";
       button.setAttribute("role", "radio");
       button.setAttribute("aria-checked", String(task.id === state.task));
+      button.title = task.blurb;
+      const key = document.createElement("span");
+      key.className = "nav-item-key";
+      const open = document.createElement("span");
+      open.className = "nav-item-bracket";
+      open.textContent = "[";
+      const close = open.cloneNode();
+      close.textContent = "]";
+      key.append(open, TASK_KEYS[task.id] ?? "", close);
       const label = document.createElement("span");
       label.textContent = task.label;
       const count = document.createElement("span");
-      count.className = "task-count";
+      count.className = "nav-item-count";
       count.textContent = task.stems.length;
-      const blurb = document.createElement("span");
-      blurb.className = "task-blurb";
-      blurb.textContent = task.blurb;
-      button.append(label, count, blurb);
-      button.addEventListener("click", () => {
-        state.task = task.id;
-        persist();
-        renderRail();
-      });
+      button.append(key, label, count);
+      button.addEventListener("click", () => pickTask(task.id));
       nav.append(button);
     }
   }
@@ -139,7 +145,7 @@ function renderStems() {
   for (const stem of stemChoices(task)) {
     const label = document.createElement("label");
     label.className = "stem-pick";
-    label.style.setProperty("--stem", colorOf(stem));
+    label.style.setProperty("--stem", stemVar(stem));
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = chosen.includes(stem);
@@ -172,6 +178,7 @@ function renderFormats() {
     renderFormats();
   });
   $("format-note").textContent = FORMAT_NOTES[state.format];
+  if (state.catalog) renderRoute();
 }
 
 function renderFirstRun() {
@@ -181,51 +188,100 @@ function renderFirstRun() {
   if (isolating(task)) ids.add("leap-xe-voc");
   const missing = [...ids].reduce((sum, id) => sum + (state.catalog.models[id].missing || 0), 0);
   $("first-run").textContent = missing
-    ? `${task.label} at this quality needs ${megabytes(missing)} of model weights. They download once, on the first run.`
+    ? `This needs ${megabytes(missing)} of model weights. They download once, on the first run, and every file is checked before it loads.`
     : "Everything runs on this computer. Nothing is uploaded.";
 }
 
-function routeItem(className, ...children) {
-  const item = document.createElement("li");
-  item.className = className;
-  item.append(...children);
-  return item;
+function stemTap(stem) {
+  const tap = document.createElement("span");
+  tap.className = "patch-tap";
+  tap.style.setProperty("--stem", stemVar(stem));
+  tap.textContent = stem;
+  return tap;
 }
 
-function stemChip(stem) {
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.style.setProperty("--stem", colorOf(stem));
-  chip.textContent = stem;
-  return chip;
+function wire() {
+  const line = document.createElement("span");
+  line.className = "patch-wire";
+  return line;
+}
+
+function patchNode(title, note, className = "") {
+  const node = document.createElement("span");
+  node.className = `patch-node ${className}`;
+  node.append(title);
+  if (note) {
+    const small = document.createElement("small");
+    small.textContent = note;
+    node.append(small);
+  }
+  return node;
 }
 
 function renderRoute() {
   const task = currentTask();
   const tier = currentTier(task);
   const steps = isolating(task) ? tier.isolated_steps : tier.steps;
-  const route = $("route");
-  route.replaceChildren(routeItem("source", "your file"));
-  for (const step of steps) {
-    if (step.input !== "mix") route.append(routeItem("", stemChip(step.input)));
+  $("intake-title").textContent = task.label;
+  $("intake-blurb").textContent = task.blurb;
+  const patch = $("route");
+  patch.replaceChildren(patchNode("your file", "any format", "source"));
+  const finals = chosenStems(task);
+  const side = [];
+  steps.forEach((step, index) => {
+    if (step.input !== "mix") patch.append(wire(), stemTap(step.input));
     const models = step.models.map((id) => state.catalog.models[id]);
-    const box = document.createElement("span");
-    box.className = "box";
-    if (models.length > 1) {
-      box.textContent = `${models.map((m) => m.label).join(" + ")}, averaged`;
-    } else {
-      const by = document.createElement("span");
-      by.className = "by";
-      by.textContent = models[0].author;
-      box.append(`${models[0].label} `, by);
-    }
-    route.append(routeItem("model", box));
+    const title = models.length > 1 ? models.map((m) => m.label).join(" + ") : models[0].label;
+    const note = models.length > 1 ? "averaged sample by sample" : models[0].author;
+    patch.append(wire(), patchNode(title, note));
+    if (index < steps.length - 1) side.push(...step.outputs.filter((o) => finals.includes(o)));
+  });
+  const outputs = document.createElement("ul");
+  outputs.className = "patch-out";
+  for (const stem of finals) {
+    const item = document.createElement("li");
+    item.style.setProperty("--stem", stemVar(stem));
+    item.textContent = stem;
+    if (side.includes(stem)) item.classList.add("side");
+    outputs.append(item);
   }
-  const outputs = document.createElement("span");
-  outputs.style.display = "inline-flex";
-  outputs.style.gap = "12px";
-  outputs.append(...chosenStems(task).map(stemChip));
-  route.append(routeItem("", outputs));
+  patch.append(wire(), outputs);
+  renderSpec(task, tier);
+}
+
+function renderSpec(task, tier) {
+  const models = [...new Set(tier.models)].map((id) => state.catalog.models[id]);
+  if (isolating(task)) models.unshift(state.catalog.models["leap-xe-voc"]);
+  const missing = models.reduce((sum, m) => sum + (m.missing || 0), 0);
+  const size = models.reduce((sum, m) => sum + m.size, 0);
+  // quote the task's lead stem, the number the task is judged by, from the strongest model that publishes it
+  const lead = task.stems.find((stem) => models.some((m) => m.scores[stem] != null));
+  const best = lead ? [lead, Math.max(...models.map((m) => m.scores[lead] ?? -Infinity))] : null;
+  const licenses = [...new Set(models.map((m) => (m.license === "Not stated by the author" ? "unstated" : m.license === "Unknown" ? "unknown" : m.license)))];
+  const cells = [
+    ["models", models.length === 1 ? models[0].label : `${models.length} in chain`],
+    ["published sdr", best ? `${best[1].toFixed(2)} dB ${best[0]}` : "not published"],
+    ["weights", missing ? `${megabytes(missing)} to fetch` : `${megabytes(size)} ready`, missing ? "warn" : ""],
+    ["license", licenses.join(", ")],
+    ["output", `${state.format} ${FORMAT_BITS[state.format]}`],
+  ];
+  const spec = $("intake-spec");
+  spec.replaceChildren();
+  for (const [term, value, tone] of cells) {
+    const cell = document.createElement("div");
+    const dt = document.createElement("dt");
+    dt.textContent = term;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    dd.title = value;
+    if (tone) dd.className = tone;
+    cell.append(dt, dd);
+    spec.append(cell);
+  }
+  $("task-meta").textContent = `${state.catalog.tasks.length} modes`;
+  $("tier-meta").textContent = tier.label;
+  $("stem-meta").textContent = `${chosenStems(task).length} of ${stemChoices(task).length}`;
+  $("format-meta").textContent = FORMAT_BITS[state.format];
 }
 
 function renderRail() {
@@ -329,7 +385,7 @@ function taskLine(job) {
   const task = state.catalog.tasks.find((t) => t.id === job.task);
   const tier = task?.tiers.find((t) => t.id === job.tier);
   const parts = [task?.label ?? job.task, task && task.tiers.length > 1 ? tier?.label : null, job.format.toUpperCase()];
-  return parts.filter(Boolean).join(" Â· ");
+  return parts.filter(Boolean).join(" · ");
 }
 
 function renderJobs() {
@@ -403,6 +459,7 @@ function show(view) {
 function renderStage() {
   renderJobs();
   const job = state.selected ? jobById(state.selected) : null;
+  $("title-session").textContent = job ? job.name : "";
   if (!job) {
     closeSession();
     renderStaged();
@@ -410,7 +467,7 @@ function renderStage() {
     document.title = "Split";
     return;
   }
-  document.title = `${job.name} Â· Split`;
+  document.title = `${job.name} · Split`;
   if (job.status === "done") {
     show(["session"]);
     if (state.session?.id !== job.id) openSession(job);
@@ -476,30 +533,47 @@ async function openSession(job) {
   const session = { id: job.id, job, lanes: [], ready: false };
   state.session = session;
   $("session-name").textContent = job.name;
-  $("session-meta").textContent = `${taskLine(job)} Â· ${formatTime(job.duration)}`;
+  $("session-meta").textContent = `${taskLine(job)} · ${formatTime(job.duration)}`;
   $("clock-total").textContent = `/ ${formatTime(job.duration)}`;
   $("export").classList.toggle("hidden", !native());
   $("mix-note").classList.add("hidden");
   const template = $("lane-template");
   for (const [index, stem] of stems.entries()) {
     const node = template.content.firstElementChild.cloneNode(true);
-    node.style.setProperty("--stem", colorOf(stem));
+    node.style.setProperty("--stem", stemVar(stem));
     node.querySelector(".lane-name").textContent = stem;
     node.querySelector(".lane-key").textContent = index < 9 ? String(index + 1) : "";
     const save = node.querySelector(".lane-save");
     save.href = `/api/jobs/${job.id}/stems/${stem}?download=true`;
     save.download = "";
-    const lane = { stem, node, canvas: node.querySelector("canvas"), peaks: null, level: node.querySelector(".level span") };
-    lane.observer = new ResizeObserver(() => drawWave(lane.canvas, lane.peaks, colorOf(stem)));
-    lane.observer.observe(lane.canvas);
+    const lane = {
+      stem,
+      node,
+      dim: node.querySelector(".wave-dim"),
+      lit: node.querySelector(".wave-lit"),
+      peaks: null,
+      ladder: node.querySelector(".ladder"),
+      level: node.querySelector(".ladder span"),
+    };
+    lane.draw = () => {
+      drawWave(lane.dim, lane.peaks, colorOf(stem), 0.32);
+      drawWave(lane.lit, lane.peaks, colorOf(stem), 1);
+      lane.level.style.setProperty("--ladder-h", `${lane.ladder.clientHeight}px`);
+    };
+    lane.observer = new ResizeObserver(() => {
+      lane.draw();
+      renderRuler();
+    });
+    lane.observer.observe(lane.dim);
     wireLane(lane);
     $("lanes").append(node);
     session.lanes.push(lane);
     api.get(`/api/jobs/${job.id}/peaks/${stem}`).then((peaks) => {
       lane.peaks = peaks;
-      drawWave(lane.canvas, peaks, colorOf(stem));
+      lane.draw();
     });
   }
+  renderRuler();
   renderTransport();
   const loaded = await mixer.load(stems.map((stem) => ({ stem, url: `/api/jobs/${job.id}/stems/${stem}` })), job.duration);
   if (state.session !== session || !loaded) return;
@@ -511,12 +585,30 @@ async function openSession(job) {
   renderTransport();
 }
 
+function renderRuler() {
+  const ticks = $("ruler-ticks");
+  const duration = state.session?.job.duration || 0;
+  ticks.replaceChildren();
+  if (!duration || !ticks.clientWidth) return;
+  // pick the smallest step that keeps labels at least ~70px apart
+  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const step = steps.find((s) => (s / duration) * ticks.clientWidth >= 70) ?? 900;
+  for (let t = 0; t <= duration; t += step / 5) {
+    const tick = document.createElement("span");
+    const major = Math.abs(t / step - Math.round(t / step)) < 1e-6;
+    tick.className = major ? "" : "minor";
+    tick.style.left = `${(t / duration) * 100}%`;
+    if (major) tick.textContent = formatTime(t);
+    ticks.append(tick);
+  }
+}
+
 function wireLane(lane) {
   const { node, stem } = lane;
   const solo = node.querySelector(".solo");
   const mute = node.querySelector(".mute");
   const gain = node.querySelector(".gain");
-  const readout = node.querySelector(".gain-read");
+  const readout = node.querySelector(".gain-db");
   const toggle = (button, key) => {
     const on = button.getAttribute("aria-pressed") !== "true";
     button.setAttribute("aria-pressed", String(on));
@@ -595,7 +687,11 @@ function frame() {
       $("playhead").style.left = `${wave.offsetLeft}px`;
       $("playhead").style.height = `${lanes.scrollHeight}px`;
     }
-    for (const lane of session.lanes) lane.level.style.width = `${Math.round(mixer.level(lane.stem) * 100)}%`;
+    const played = mixer.duration ? Math.min(100, (position / mixer.duration) * 100) : 0;
+    for (const lane of session.lanes) {
+      lane.level.style.height = `${Math.round(mixer.level(lane.stem) * 100)}%`;
+      lane.lit.style.clipPath = `inset(0 ${100 - played}% 0 0)`;
+    }
     if (!mixer.playing && $("play").classList.contains("playing")) renderTransport();
   }
   requestAnimationFrame(frame);
@@ -644,7 +740,7 @@ function renderModels() {
     link.rel = "noreferrer";
     link.textContent = "source";
     const scores = Object.entries(model.scores).map(([stem, sdr]) => `${stem} ${sdr.toFixed(2)}`).join(", ");
-    meta.append(`${model.license} Â· ${megabytes(model.size)}${scores ? ` Â· SDR ${scores}` : ""} Â· `, link);
+    meta.append(`${model.license} · ${megabytes(model.size)}${scores ? ` · SDR ${scores}` : ""} · `, link);
     const side = document.createElement("div");
     side.className = "model-side";
     if (download && ["queued", "running"].includes(download.status)) {
@@ -679,27 +775,106 @@ function actionButton(label, run) {
   return button;
 }
 
-$("open-models").addEventListener("click", () => {
+function openModels() {
   renderModels();
   $("models-sheet").showModal();
-});
-$("close-models").addEventListener("click", () => $("models-sheet").close());
-
-/* theme */
-
-const THEMES = ["system", "dark", "light"];
-function applyTheme(choice) {
-  const dark = choice === "dark" || (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.dataset.theme = dark ? "dark" : "light";
-  $("theme").textContent = `Theme: ${choice}`;
-  for (const lane of state.session?.lanes ?? []) drawWave(lane.canvas, lane.peaks, colorOf(lane.stem));
 }
-$("theme").addEventListener("click", () => {
-  const next = THEMES[(THEMES.indexOf(localStorage.getItem("split.theme") || "system") + 1) % THEMES.length];
-  localStorage.setItem("split.theme", next);
-  applyTheme(next);
+$("open-models").addEventListener("click", openModels);
+$("seg-models").addEventListener("click", openModels);
+
+/* look: style and theme */
+
+const STYLES = [{ id: "mk2", label: "MK II" }, { id: "brass", label: "Brass" }];
+const THEMES = [{ id: "system", label: "System" }, { id: "dark", label: "Dark" }, { id: "light", label: "Light" }];
+const look = { style: localStorage.getItem("split.style") || "mk2", theme: localStorage.getItem("split.theme") || "system" };
+
+function applyLook() {
+  const dark = look.theme === "dark" || (look.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.documentElement.dataset.style = look.style;
+  for (const lane of state.session?.lanes ?? []) lane.draw();
+  radio($("style-pick"), STYLES, look.style, (id) => {
+    look.style = id;
+    localStorage.setItem("split.style", id);
+    applyLook();
+  });
+  radio($("theme-pick"), THEMES, look.theme, (id) => {
+    look.theme = id;
+    localStorage.setItem("split.theme", id);
+    applyLook();
+  });
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyLook);
+$("open-look").addEventListener("click", () => $("look-sheet").showModal());
+
+/* help */
+
+const KEYS = [
+  ["Ctrl O", "Add files"],
+  ["Enter", "Separate the files waiting"],
+  ["V I K B S D R N C", "Switch task"],
+  ["Space", "Play or pause"],
+  ["Left Right", "Seek 5 seconds, Shift for 1"],
+  ["Home", "Back to the start"],
+  ["1 to 9", "Solo a lane, Shift to mute"],
+  ["Esc", "Clear solos"],
+  ["F1", "This list"],
+];
+
+function openHelp() {
+  const list = $("keys");
+  list.replaceChildren();
+  for (const [keys, action] of KEYS) {
+    const term = document.createElement("dt");
+    for (const key of keys.split(" ")) {
+      const cap = document.createElement("kbd");
+      cap.textContent = key;
+      term.append(cap, " ");
+    }
+    const description = document.createElement("dd");
+    description.textContent = action;
+    list.append(term, description);
+  }
+  $("help-sheet").showModal();
+}
+$("open-help").addEventListener("click", openHelp);
+for (const button of document.querySelectorAll("[data-close]")) {
+  button.addEventListener("click", () => button.closest("dialog").close());
+}
+
+/* window chrome: on windows the page draws the title bar and windows runs the drag */
+
+let customChrome = false;
+let lastPress = 0;
+window.splitChrome = (maximized) => document.documentElement.classList.toggle("maximized", maximized);
+
+whenNative(async (bridge) => {
+  const chrome = await bridge.chrome();
+  if (!chrome.custom) return;
+  customChrome = true;
+  $("window-controls").classList.remove("hidden");
+  $("edges").classList.remove("hidden");
+  window.splitChrome(chrome.maximized);
 });
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(localStorage.getItem("split.theme") || "system"));
+
+$("titlebar").addEventListener("mousedown", (event) => {
+  if (!customChrome || event.button !== 0 || event.target.closest("button")) return;
+  // the native move loop swallows the second click, so a double click is two quick presses
+  const now = performance.now();
+  if (now - lastPress < 350) {
+    lastPress = 0;
+    native().window_toggle();
+    return;
+  }
+  lastPress = now;
+  native().window_drag("move");
+});
+$("edges").addEventListener("mousedown", (event) => {
+  if (event.button === 0 && event.target.dataset.edge) native().window_drag(event.target.dataset.edge);
+});
+$("win-min").addEventListener("click", () => native().window_minimize());
+$("win-max").addEventListener("click", () => native().window_toggle());
+$("win-close").addEventListener("click", () => native().window_close());
 
 /* intake: drops, picker, keyboard */
 
@@ -732,7 +907,12 @@ async function addFiles() {
     $("file-input").click();
   }
 }
-$("add-files").addEventListener("click", addFiles);
+$("add-files").addEventListener("click", (event) => {
+  event.stopPropagation();
+  addFiles();
+});
+$("add-files-top").addEventListener("click", addFiles);
+$("dropzone").addEventListener("click", addFiles);
 $("file-input").addEventListener("change", (event) => {
   stageFiles(event.target.files);
   event.target.value = "";
@@ -746,7 +926,18 @@ $("clear-staged").addEventListener("click", () => {
 document.addEventListener("keydown", (event) => {
   const target = event.target;
   const typing = target instanceof HTMLInputElement && target.type !== "range" && target.type !== "checkbox";
-  if (typing || $("models-sheet").open) return;
+  if (typing || document.querySelector("dialog[open]")) return;
+  if (event.key === "F1") {
+    event.preventDefault();
+    openHelp();
+    return;
+  }
+  const letter = !event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1 ? event.key.toLowerCase() : "";
+  const keyed = Object.entries(TASK_KEYS).find(([, key]) => key === letter);
+  if (keyed && !state.session) {
+    pickTask(keyed[0]);
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
     event.preventDefault();
     addFiles();
@@ -784,6 +975,7 @@ document.addEventListener("keydown", (event) => {
 async function refreshCatalog() {
   state.catalog = await api.get("/api/catalog");
   renderRail();
+  renderStatus(state.snapshot);
   if ($("models-sheet").open) renderModels();
 }
 
@@ -793,19 +985,33 @@ function renderDevice(snapshot) {
     device.textContent = "engine failed";
     device.title = snapshot.fatal.message;
     device.classList.add("warn");
+    $("device-led").className = "led off";
     return;
   }
   const info = snapshot.device;
   if (!info) return;
   device.classList.toggle("warn", info.kind === "cpu");
-  device.textContent = info.kind === "cpu" ? "CPU only" : info.name.replace(/^NVIDIA (GeForce )?/, "");
+  $("device-led").className = `led ${info.kind === "cpu" ? "busy" : "on"}`;
+  device.textContent = info.kind === "cpu" ? "cpu only" : info.name.replace(/^NVIDIA (GeForce )?/, "");
   device.title = info.note || (info.kind === "cpu" ? "No supported GPU found. Expect several minutes per song." : `Running on ${info.name}`);
+}
+
+function renderStatus(snapshot) {
+  const running = snapshot.jobs.filter((j) => j.status === "running").length;
+  const waiting = snapshot.jobs.filter((j) => j.status === "queued").length;
+  $("queue-led").className = `led ${running ? "busy" : ""}`;
+  $("queue-state").textContent = running || waiting ? `${running} running${waiting ? `, ${waiting} waiting` : ""}` : "idle";
+  if (state.catalog) {
+    const models = Object.values(state.catalog.models);
+    $("models-ready").textContent = `${models.filter((m) => m.present).length} of ${models.length} ready`;
+  }
 }
 
 function onSnapshot(snapshot) {
   const before = state.snapshot.downloads;
   state.snapshot = snapshot;
   renderDevice(snapshot);
+  renderStatus(snapshot);
   if (state.openedSeq === null) state.openedSeq = snapshot.opened.seq;
   else if (snapshot.opened.seq !== state.openedSeq) {
     state.openedSeq = snapshot.opened.seq;
@@ -820,7 +1026,7 @@ function onSnapshot(snapshot) {
 }
 
 async function boot() {
-  applyTheme(localStorage.getItem("split.theme") || "system");
+  applyLook();
   const [system] = await Promise.all([api.get("/api/system"), refreshCatalog()]);
   $("version").textContent = `v${system.version}`;
   $("data-dir").textContent = system.data_dir;
