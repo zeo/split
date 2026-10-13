@@ -1,87 +1,68 @@
-# Split - local studio-grade stem splitter
+# Split
 
-Runs 100% on your machine. No uploads, no subscriptions, no file leaving your PC.
+Split takes a song apart on your own GPU: vocals, karaoke, four or six band stems, a drum kit, and cleanup passes for reverb, noise and crowds. It runs the strongest separation models you can download, so nothing gets uploaded and nothing gets rate-limited.
 
-**Quality:** vocal models are Mel-Band / BS-RoFormer checkpoints
-with published vocal SDR **12.6-12.98** (vs ~10.8 for the previous generation),
-plus **Ultra ensembles** that combine multiple models per track, and an
-**Enhanced mode** (denser overlap + focused single-stem passes). Speed: local
-GPU inference with fp16 autocast on CUDA - an 8 s clip separates in ~6-30 s
-depending on tier, with zero cloud round-trip.
+Drop files on the window, pick a task, and each stem lands in its own lane. Solo, mute and ride the gain to check the split, then save stems one at a time, export them all to a folder, or grab a zip.
 
-## Desktop app (Windows)
+## Install
 
-Use `dist/Split/Split.exe` - double-click, your browser opens at
-`http://127.0.0.1:8000`. Keep the console window open while using it.
-First run downloads model weights (~100-500 MB each) into `models_cache/`
-next to the exe.
+On Windows, install it with the rot installer, or run `split-<version>-online-setup.exe` from the [releases page](https://github.com/zeo/split/releases). The online setup is the rot installer itself. It downloads Split in parts, checks the signature, and keeps it updated. The app is about 4.4 GB on disk, most of it the CUDA build of PyTorch.
 
-To rebuild the exe: `pyinstaller split.spec` (Python 3.14, CUDA torch).
+You need an NVIDIA RTX 20-series card or newer and a driver from the R580 branch or later. Older cards and machines without a supported GPU fall back to the CPU, which works but takes minutes per song. Model weights download the first time a task needs them: 270 MB for Vocals, 700 MB for 4 or 6 stems, up to 2.1 GB for Instrumental Ultra.
 
-## From source
+## Tasks
 
-```bash
-pip install -r requirements.txt
-python -m uvicorn split.server:app --port 8000
-# open http://127.0.0.1:8000
-```
+| Task | Stems | Best tier |
+|---|---|---|
+| Vocals | vocals, instrumental | unwa Leap Xe |
+| Instrumental | instrumental, vocals | unwa Leap instrumental |
+| Karaoke | lead, backing | anvuew BS-RoFormer karaoke |
+| 4 stems | vocals, drums, bass, other | BS-RoFormer SW, guitar and piano folded into other |
+| 6 stems | vocals, drums, bass, guitar, piano, other | BS-RoFormer SW |
+| Drum kit | kick, snare, toms, hihat, cymbals | SW pulls the drums out, DrumSep 5-stem splits the kit |
+| De-reverb | dry, reverb | anvuew BS de-reverb |
+| Denoise | clean, noise | aufr33 denoise |
+| Crowd | clean, crowd | aufr33 and viperx crowd |
 
-Pick a **task** in the sidebar (Vocals / Karaoke / Full band / Band 6-stem /
-Drum kit / Cleanup), a **quality tier** (Fast / Balanced / Best / **Ultra**),
-drop audio in, preview each stem in the browser, download singles or a `.zip`.
-Tick **Enhanced quality** on any tier for denser-overlap, cleaner-edge output.
+Vocals, Instrumental and Karaoke also have an Ultra tier that averages two or three models sample by sample. Vocals, Instrumental and 4 stems have a Fast tier. The cleanup tasks can isolate the vocal first, so de-reverb works on the voice instead of the whole mix.
 
-## CLI
+The picks follow the [MVSEP leaderboards](https://mvsep.com/quality_checker/multisong_leaderboard) as of October 2026, limited to models you can actually download. Leap Xe scores 11.76 dB SDR on vocals. SW scores 9.01 on guitar and 7.80 on piano, against 5.25 and 2.23 for HT Demucs 6s. On an RTX 4070 Ti, a four-and-a-half-minute song takes about two minutes on Vocals Best.
 
-```bash
-python -m split.cli separate song.mp3 -o out/ --task vocals --tier ultra
-python -m split.cli separate song.flac -o out/ --task band --tier best --format flac
-python -m split.cli separate song.mp3 -o out/ --model viperx-1297 --enhanced
-python -m split.cli models
-```
-
-Tasks: `vocals` `karaoke` `band` `band6` `drums` `cleanup`.
-Tiers: `fast` `balanced` `best` `ultra`. Formats: `mp3` `wav` `flac`.
-`--model <id>` pins a specific checkpoint (see `models` list).
-`--overlap 0.1-0.75` and `--shifts` trade speed for quality on Demucs band tasks.
-
-## Models (all local)
-
-| Use | Fast | Balanced | Best | Ultra |
-|---|---|---|---|---|
-| Vocals | MDX Inst HQ3 (ONNX) | Kim Mel-Band (SDR 12.6) | Viperx-1297 (SDR 12.98) | Vocal Clean ensemble |
-| Karaoke | MDX Inst HQ3 | becruily karaoke ckpt | Viperx-1297 | 3-model karaoke ensemble |
-| Full band 4-stem | Demucs MMI | HD Demucs | HD Demucs fine-tuned | HD Demucs ft + shifts |
-| Band 6-stem | HD Demucs | HD Demucs 6s | HD Demucs 6s | HD Demucs 6s |
-| Drum kit | Demucs ft | MDX23C DrumSep | MDX23C DrumSep | MDX23C DrumSep |
-| Cleanup | Denoise RoFormer | Denoise RoFormer | De-Reverb/Echo V2 | De-Reverb/Echo V2 |
-
-FLAC supported for input and output (lossless). MP3 output is 320 kbps.
-
-## API
-
-- `GET /api/models` - models, tasks, tiers, active device
-- `POST /api/jobs` - multipart `file` + `task`/`tier`/`output_format`/`stems?`/`overlap?`/`shifts?`/`enhanced?` → `{id}` (202)
-- `GET /api/jobs/{id}` - status/progress/stem URLs
-- `GET /api/jobs/{id}/stems/{stem}` - download one stem
-- `GET /api/jobs/{id}/download` - all stems as `.zip`
-- `DELETE /api/jobs/{id}` - delete job files
-
-## Layout
+## Command line
 
 ```
-split/  engine.py (RoFormer+Demucs+ensembles)  models.py  cli.py  server.py
-split_gui.py  split.spec   (desktop launcher + exe build)
-web/        index.html  styles.css  app.js   (macOS-native UI)
-models_cache/  jobs/  uploads/   (runtime data, gitignored)
-dist/Split/Split.exe   (built desktop app)
+split separate song.flac --task band6 --format flac --output stems
+split separate *.mp3 --task vocals --tier ultra --stems vocals
+split models
+split download leap-xe-voc sw
+split serve --port 8000
 ```
 
-## Notes
+`separate` takes any number of files and anything FFmpeg can read, video included. `--json` prints progress as JSON lines for scripts. `serve` runs the same interface in your browser.
 
-- Community checkpoints circulate informally; weights are for personal use -
-  get legal review before commercial redistribution.
-- Orchestral/cinematic splitting has no dedicated open model; use Full band
-  and keep the `other` stem.
-- ffmpeg is bundled into dist/Split/Split.exe at build time (see split.spec); running from source needs ffmpeg on PATH for mp3/flac output (wav always works).
-- jobs/ and uploads/ are swept on server startup: entries older than 48 h are deleted, max 20 recent jobs kept. DELETE /api/jobs/{id} removes one immediately.
+## Run from source
+
+```
+uv sync --extra desktop
+uv run python -m split.desktop
+uv run pytest
+```
+
+You need Python 3.13 and FFmpeg on your PATH. The lockfile pulls CUDA 13.0 builds of PyTorch on Windows and Linux. `packaging/build.ps1` makes the Windows build: it fetches a pinned FFmpeg, builds with PyInstaller from a clean environment, and smoke-tests the result.
+
+## How it works
+
+- `split/catalog.py` is the single list of models, tasks and tiers. Every weight file is pinned by URL, size and SHA-256, so a mirror that swaps a file gets refused.
+- Separation runs in a worker process (`split/engine.py`) that owns the GPU. Jobs run one at a time, a cancel kills and respawns the worker to free VRAM, and a crash fails the job instead of the app.
+- Models run through [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) with three changes:
+  - Its per-stem peak normalization is off, so stems sum back to the mix.
+  - Rotary embeddings run in half precision with cached angles.
+  - Flash attention is enabled on every card that supports it. Together these make inference 2.5x to 3.5x faster than float32, with vocal stems within 48 to 53 dB SNR of the float32 output.
+- Input is decoded once by FFmpeg to 44.1 kHz float. Output goes back to the source's own sample rate and channel count.
+- The window is [pywebview](https://pywebview.flowrl.com) on WebView2, talking to a loopback FastAPI server that accepts only local hosts and a per-launch token. Playback decodes every stem into Web Audio buffers that start on one clock, so soloing two stems never drifts.
+
+Settings, models and finished jobs live in `%LOCALAPPDATA%\Split` on Windows, `~/Library/Application Support/Split` on macOS and `~/.local/share/split` on Linux. Set `SPLIT_HOME` to move them.
+
+## License
+
+Split's code is MIT or Apache-2.0, your choice. Model weights belong to their authors, and several are GPL-3.0, non-commercial or unlicensed. The Windows build bundles FFmpeg (GPL-3.0) and diffq (CC-BY-NC-4.0), which makes the packaged app non-commercial. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every model and bundled component with its source.

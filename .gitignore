@@ -1,9 +1,10 @@
+__pycache__/
+*.log
+.venv/
+build/
+dist/
+release/
+# runtime folders from 0.2 and earlier, which kept data in the checkout
 models_cache/
 jobs/
 uploads/
-__pycache__/
-*.log
-build/
-dist/
-verify_*.wav
-e2e_*.wav
