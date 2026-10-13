@@ -298,20 +298,23 @@ class Runner:
         outputs: dict[str, str] = {}
         peaks_dir = job_dir / "peaks"
         peaks_dir.mkdir(exist_ok=True)
+        sources: dict[str, Path] = {}
         for stem in wanted:
             parts = finals[stem]
-            wav = parts[0]
+            sources[stem] = parts[0]
             if len(parts) > 1:
-                wav = work / f"{stem}.wav"
-                media.mix(parts, wav)
+                sources[stem] = work / f"{stem}.wav"
+                media.mix(parts, sources[stem])
+        gain = media.shared_gain(list(sources.values()))
+        for stem, wav in sources.items():
             name = f"{stem}.{fmt}"
-            media.encode(wav, job_dir / name, fmt, source)
+            media.encode(wav, job_dir / name, fmt, source, gain)
             media.write_peaks(wav, peaks_dir / f"{stem}.json")
             outputs[stem] = name
             done += 0.25
             progress("encode", f"Wrote {stem}")
         shutil.rmtree(work, ignore_errors=True)
-        return {"outputs": outputs, "duration": source.duration}
+        return {"outputs": outputs, "duration": source.duration, "trim_db": round(20 * math.log10(gain), 2)}
 
     def _combine(self, step: Step, results: list[dict[str, Path]], out: Path) -> dict[str, Path]:
         if len(results) == 1:

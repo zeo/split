@@ -64,3 +64,13 @@ def test_peaks_cover_the_whole_file(tmp_path):
     assert 99 <= len(data["peak"]) <= 101
     assert max(data["peak"]) == pytest.approx(0.5, abs=0.01)
     assert all(r <= p + 1e-6 for p, r in zip(data["peak"], data["rms"], strict=True))
+
+
+def test_shared_gain_keeps_every_stem_under_the_ceiling(tmp_path):
+    loud = np.full((10, 2), 1.4, dtype=np.float32)
+    quiet = np.full((10, 2), 0.2, dtype=np.float32)
+    sf.write(tmp_path / "loud.wav", loud, 44100, subtype="FLOAT")
+    sf.write(tmp_path / "quiet.wav", quiet, 44100, subtype="FLOAT")
+    gain = media.shared_gain([tmp_path / "loud.wav", tmp_path / "quiet.wav"])
+    assert gain == pytest.approx(media.CEILING / 1.4)
+    assert media.shared_gain([tmp_path / "quiet.wav"]) == 1.0

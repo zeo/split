@@ -18,6 +18,8 @@ WORK_RATE = 44100
 FORMATS = ("wav", "flac", "mp3")
 MEDIA_TYPES = {"wav": "audio/wav", "flac": "audio/flac", "mp3": "audio/mpeg"}
 PEAK_BUCKETS = 2400
+# -0.1 dBFS, leaving room for overshoot when resampling back to the source rate
+CEILING = 0.989
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
@@ -56,7 +58,7 @@ def decode(source: Path, dest: Path) -> Source:
     return Source(sample_rate=rate, channels=channels, duration=info.duration)
 
 
-def encode(wav: Path, dest: Path, fmt: str, source: Source) -> None:
+def encode(wav: Path, dest: Path, fmt: str, source: Source, gain: float = 1.0) -> None:
     """Write a stem in the requested format at the source's own rate and channel count."""
     codec = {
         "wav": ["-c:a", "pcm_s24le"],
@@ -66,7 +68,8 @@ def encode(wav: Path, dest: Path, fmt: str, source: Source) -> None:
     shape = ["-ar", str(source.sample_rate), "-ac", str(source.channels)]
     if fmt == "mp3":
         shape = ["-ar", str(min(source.sample_rate, 48000)), "-ac", str(source.channels)]
-    result = _ffmpeg("-i", wav, *shape, *codec, dest)
+    level = ["-af", f"volume={gain:.6f}"] if gain != 1.0 else []
+    result = _ffmpeg("-i", wav, *level, *shape, *codec, dest)
     if result.returncode != 0:
         reason = (result.stderr.strip().splitlines() or ["unknown error"])[-1]
         raise MediaError(f"Could not encode {dest.name}: {reason}")
@@ -85,6 +88,22 @@ def mix(sources: list[Path], dest: Path) -> None:
                 data, ((0, length - len(data)), (0, 0))
             )
     sf.write(dest, total, rate, subtype="FLOAT")
+
+
+def peak(wav: Path) -> float:
+    return max(
+        (
+            float(np.abs(block).max(initial=0.0))
+            for block in sf.blocks(wav, blocksize=1 << 18, dtype="float32")
+        ),
+        default=0.0,
+    )
+
+
+def shared_gain(wavs: list[Path]) -> float:
+    """One gain for every stem, so none clips in a fixed-point format and the stems still sum to the mix."""
+    loudest = max((peak(w) for w in wavs), default=0.0)
+    return min(1.0, CEILING / loudest) if loudest else 1.0
 
 
 def peaks(wav: Path, buckets: int = PEAK_BUCKETS) -> dict:

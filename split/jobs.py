@@ -361,7 +361,13 @@ class Jobs:
         with self.lock:
             self.current = None
             if result["type"] == "done":
-                self._finish(record, "done", outputs=result["outputs"], duration=result["duration"])
+                self._finish(
+                    record,
+                    "done",
+                    outputs=result["outputs"],
+                    duration=result["duration"],
+                    trim_db=result.get("trim_db", 0.0),
+                )
             elif result["type"] == "cancelled":
                 shutil.rmtree(self.root / job_id / "work", ignore_errors=True)
                 self._finish(record, "cancelled")
