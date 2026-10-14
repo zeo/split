@@ -65,18 +65,10 @@ def self_test(report_path: str | None) -> int:
     return 0
 
 
-# hit-test codes the native move and size loops understand
-HIT = {"move": 2, "w": 10, "e": 11, "n": 12, "nw": 13, "ne": 14, "s": 15, "sw": 16, "se": 17}
 CUSTOM_CHROME = sys.platform == "win32"
-
-
-def _native_loop(hwnd: int, hit: int) -> None:
-    """Hand the drag to Windows so moving and resizing get snap, edge glue and full frame rate."""
-    import ctypes
-
-    user32 = ctypes.windll.user32
-    user32.ReleaseCapture()
-    user32.PostMessageW(hwnd, 0x00A1, hit, 0)  # WM_NCLBUTTONDOWN
+EDGES = ("n", "s", "e", "w", "nw", "ne", "sw", "se")
+# a blank first page, so the title bar setting below applies to the real page's navigation
+BLANK = '<html><body style="margin:0;background:#0f1317"></body></html>'
 
 
 def _round_corners(hwnd: int) -> None:
@@ -84,6 +76,50 @@ def _round_corners(hwnd: int) -> None:
 
     preference = ctypes.c_int(2)  # DWMWCP_ROUND
     ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(preference), ctypes.sizeof(preference))
+
+
+def _follow_cursor(hwnd: int, edge: str, minimum: tuple[int, int]) -> None:
+    """Move, or resize from an edge, until the button comes up, reading the cursor directly.
+
+    The page holds the mouse capture inside the webview's own process, so the native
+    sizing loop cannot take it over; polling sidesteps capture entirely
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    # GetAsyncKeyState reads physical buttons, so a left-handed mouse reports the right one
+    button = 0x02 if user32.GetSystemMetrics(23) else 0x01  # SM_SWAPBUTTON, VK_RBUTTON, VK_LBUTTON
+    rect, origin, cursor = wintypes.RECT(), wintypes.POINT(), wintypes.POINT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    user32.GetCursorPos(ctypes.byref(origin))
+    left, top, right, bottom = rect.left, rect.top, rect.right, rect.bottom
+    last = None
+    while user32.GetAsyncKeyState(button) & 0x8000:
+        user32.GetCursorPos(ctypes.byref(cursor))
+        dx, dy = cursor.x - origin.x, cursor.y - origin.y
+        box = [left, top, right, bottom]
+        if edge == "move":
+            box = [left + dx, top + dy, right + dx, bottom + dy]
+        if "w" in edge:
+            box[0] = min(left + dx, right - minimum[0])
+        if "e" in edge:
+            box[2] = max(right + dx, left + minimum[0])
+        if "n" in edge:
+            box[1] = min(top + dy, bottom - minimum[1])
+        if "s" in edge:
+            box[3] = max(bottom + dy, top + minimum[1])
+        if box != last:
+            # SWP_NOZORDER | SWP_NOACTIVATE
+            user32.SetWindowPos(hwnd, 0, box[0], box[1], box[2] - box[0], box[3] - box[1], 0x0004 | 0x0010)
+            last = box
+        time.sleep(1 / 120)
+
+
+def _on_ui(form, action) -> None:
+    from System import Action
+
+    form.Invoke(Action(action))
 
 
 class Bridge:
@@ -95,9 +131,11 @@ class Bridge:
         self._window = None
         self._hwnd = 0
         self._maximized = False
+        self._minimum = (0, 0)
+        self._title_bar = False
 
     def chrome(self) -> dict:
-        return {"custom": CUSTOM_CHROME, "maximized": self._maximized}
+        return {"custom": CUSTOM_CHROME, "maximized": self._maximized, "titleBar": self._title_bar}
 
     def pick_files(self) -> list[str]:
         import webview
@@ -116,9 +154,14 @@ class Bridge:
         chosen = self._window.create_file_dialog(webview.FileDialog.FOLDER)
         return chosen[0] if chosen else None
 
-    def window_drag(self, edge: str = "move") -> None:
-        if self._hwnd and edge in HIT and not (self._maximized and edge != "move"):
-            _native_loop(self._hwnd, HIT[edge])
+    def window_resize(self, edge: str) -> None:
+        if self._hwnd and edge in EDGES and not self._maximized:
+            _follow_cursor(self._hwnd, edge, self._minimum)
+
+    def window_move(self) -> None:
+        # only for webview runtimes too old to run the title bar natively
+        if self._hwnd and not self._maximized:
+            _follow_cursor(self._hwnd, "move", self._minimum)
 
     def window_minimize(self) -> None:
         self._window.minimize()
@@ -126,30 +169,59 @@ class Bridge:
     def window_toggle(self) -> None:
         if self._maximized:
             self._window.restore()
-            return
-        # a borderless form maximizes over the taskbar unless told where the work area ends
-        from System.Windows.Forms import Screen
-
-        form = self._window.native
-        form.MaximizedBounds = Screen.FromHandle(form.Handle).WorkingArea
-        self._window.maximize()
+        else:
+            self._window.maximize()
 
     def window_close(self) -> None:
         self._window.destroy()
 
-    def _attach(self, window) -> None:
+    def _attach(self, window, url: str) -> None:
         self._window = window
+        pending = [url]
+
+        def fit_maximize() -> None:
+            # a borderless form maximizes over the taskbar unless told where the work area ends;
+            # the bounds are relative to the monitor the window is on
+            from System.Drawing import Rectangle
+            from System.Windows.Forms import Screen
+
+            form = window.native
+            screen = Screen.FromHandle(form.Handle)
+            area, bounds = screen.WorkingArea, screen.Bounds
+            form.MaximizedBounds = Rectangle(area.X - bounds.X, area.Y - bounds.Y, area.Width, area.Height)
+
+        def title_bar() -> None:
+            # lets css app-region: drag mark the title bar, so windows itself runs the move:
+            # snap, shake, the system menu and double-click to maximize come with it
+            try:
+                window.native.browser.webview.CoreWebView2.Settings.IsNonClientRegionSupportEnabled = True
+                self._title_bar = True
+            except AttributeError:
+                self._title_bar = False
 
         def shown() -> None:
+            if not CUSTOM_CHROME:
+                return
+            form = window.native
+            self._hwnd = int(form.Handle.ToInt64())
+            self._minimum = (form.MinimumSize.Width, form.MinimumSize.Height)
+            _round_corners(self._hwnd)
+            _on_ui(form, fit_maximize)
+            form.LocationChanged += lambda *_: fit_maximize()
+
+        def loaded() -> None:
+            if not pending:
+                return
             if CUSTOM_CHROME:
-                self._hwnd = int(window.native.Handle.ToInt64())
-                _round_corners(self._hwnd)
+                _on_ui(window.native, title_bar)
+            window.load_url(pending.pop())
 
         def state(maximized: bool) -> None:
             self._maximized = maximized
             window.evaluate_js(f"window.splitChrome && window.splitChrome({str(maximized).lower()})")
 
         window.events.shown += shown
+        window.events.loaded += loaded
         window.events.maximized += lambda: state(True)
         window.events.restored += lambda: state(False)
 
@@ -187,9 +259,10 @@ def main(argv: list[str] | None = None) -> int:
     instance.write_text(json.dumps({"pid": os.getpid(), "port": port, "token": app.state.token}))
 
     bridge = Bridge()
+    url = f"http://127.0.0.1:{port}/"
     window = webview.create_window(
         "split",
-        f"http://127.0.0.1:{port}/",
+        html=BLANK,
         js_api=bridge,
         width=1320,
         height=860,
@@ -201,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
         # scripted runs drive the app over its api without putting a window on screen
         hidden=os.environ.get("SPLIT_WINDOW") == "hidden",
     )
-    bridge._attach(window)
+    bridge._attach(window, url)
     app.state.focus = lambda: (window.restore(), window.show())
     app.state.quit = window.destroy
     if files:

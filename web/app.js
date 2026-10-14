@@ -1029,35 +1029,33 @@ for (const button of document.querySelectorAll("[data-close]")) {
   button.addEventListener("click", () => button.closest("dialog").close());
 }
 
-/* window chrome: on windows the page draws the title bar and windows runs the drag */
+/* window chrome: on windows the page draws the title bar; css marks it as the caption */
 
 let customChrome = false;
-let lastPress = 0;
+let nativeTitle = false;
 window.splitChrome = (maximized) => document.documentElement.classList.toggle("maximized", maximized);
 
 whenNative(async (bridge) => {
   const chrome = await bridge.chrome();
   if (!chrome.custom) return;
   customChrome = true;
+  nativeTitle = chrome.titleBar;
+  document.documentElement.classList.toggle("native-title", nativeTitle);
   $("window-controls").classList.remove("hidden");
   $("edges").classList.remove("hidden");
   window.splitChrome(chrome.maximized);
 });
 
 $("titlebar").addEventListener("mousedown", (event) => {
-  if (!customChrome || event.button !== 0 || event.target.closest("button")) return;
-  // the native move loop swallows the second click, so a double click is two quick presses
-  const now = performance.now();
-  if (now - lastPress < 350) {
-    lastPress = 0;
-    native().window_toggle();
-    return;
-  }
-  lastPress = now;
-  native().window_drag("move");
+  // older webview runtimes cannot hand the caption to windows, so python follows the cursor instead
+  if (!customChrome || nativeTitle || event.button !== 0 || event.target.closest("button")) return;
+  native().window_move();
+});
+$("titlebar").addEventListener("dblclick", (event) => {
+  if (customChrome && !nativeTitle && !event.target.closest("button")) native().window_toggle();
 });
 $("edges").addEventListener("mousedown", (event) => {
-  if (event.button === 0 && event.target.dataset.edge) native().window_drag(event.target.dataset.edge);
+  if (event.button === 0 && event.target.dataset.edge) native().window_resize(event.target.dataset.edge);
 });
 $("win-min").addEventListener("click", () => native().window_minimize());
 $("win-max").addEventListener("click", () => native().window_toggle());

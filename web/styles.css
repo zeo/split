@@ -275,6 +275,9 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .titlebar-drag { display: flex; align-items: center; gap: 12px; padding: 0 14px; min-width: 0; }
+/* in the desktop window the bar is a real caption: windows runs the move, snap and double-click */
+.native-title .titlebar { app-region: drag; -webkit-app-region: drag; }
+.native-title .titlebar button, .native-title .edges span { app-region: no-drag; -webkit-app-region: no-drag; }
 .titlebar-mark { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-hi); letter-spacing: 0.02em; }
 .mark-tag {
   padding: 1px 5px;
@@ -329,7 +332,7 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
 .window-controls .glyph-restore, .maximized .window-controls .glyph-max { display: none; }
 .maximized .window-controls .glyph-restore { display: inline; }
 
-/* invisible strips along the frame that start native resizing */
+/* invisible strips along the frame that resize the window */
 .edges span { position: fixed; z-index: 50; }
 .edges [data-edge="n"] { top: 0; left: 8px; right: 8px; height: 4px; cursor: ns-resize; }
 .edges [data-edge="s"] { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
