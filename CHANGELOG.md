@@ -60,8 +60,8 @@ A rewrite. The old build could not run its band tasks once frozen, and its model
 - arrangement view: one lane per stem with solo, mute, gain, an LED meter and save, a time ruler, and played audio lit while the rest stays dim, all on one sample clock
 - queue with live progress, time left, cancel, retry and remove
 - models sheet with license, source, size and download state for every checkpoint
-- MK II, the new house style: lettered settings modules, a spec plate with the published score and download size, and a wired signal path for the chosen task; the earlier graphite and brass finish stays under Look as Brass
-- `#job=`, `#task=`, `#style=` and `#theme=` in the url open a view directly
+- a new look: lettered settings modules, a spec plate with the published score and download size, and a wired signal path for the chosen task, in light and dark
+- `#job=`, `#task=` and `#theme=` in the url open a view directly
 - the local API refuses other hosts and requires a per-launch token for anything that writes
 
 ### packaging

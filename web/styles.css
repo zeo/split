@@ -25,9 +25,8 @@
   font-display: swap;
 }
 
-/* MK II: the family finish (capscr, iris, orchard, specter), carried further.
-   ink plates, bevelled keys, paper as the only accent, lowercase mono chrome */
-:root[data-style="mk2"] {
+/* ink plates, bevelled keys, paper as the only accent, lowercase mono chrome */
+:root {
   --bg-window: #121315;
   --bg-plate: linear-gradient(180deg, #1b1c1f, #141518);
   --bg-side: linear-gradient(180deg, #111214, #0d0e10);
@@ -83,7 +82,7 @@
   --stem-crowd: #d1a68f;
   color-scheme: dark;
 }
-:root[data-style="mk2"][data-theme="light"] {
+:root[data-theme="light"] {
   --bg-window: #ebebeb;
   --bg-plate: linear-gradient(180deg, #f8f8f8, #e9e9e9);
   --bg-side: linear-gradient(180deg, #f1f1f1, #e8e8e8);
@@ -130,88 +129,6 @@
   --stem-clean: #4b8166;
   --stem-noise: #7d6658;
   --stem-crowd: #96593d;
-  color-scheme: light;
-}
-
-/* Brass: the graphite and brass finish, kept as a selectable style */
-:root[data-style="brass"] {
-  --bg-window: #0f1317;
-  --bg-plate: #141a1f;
-  --bg-side: #141a1f;
-  --bg-content: #0f1317;
-  --bg-status: #0c1014;
-  --surface: #141a1f;
-  --surface-2: #171e24;
-  --raise: #1a2128;
-  --well: #0a0d10;
-  --rule: #222b33;
-  --rule-2: #33404b;
-  --mute: #6f7a80;
-  --text: #a2abaf;
-  --text-hi: #dde2dd;
-  --accent: #c9a45c;
-  --on-accent: #17120a;
-  --ok: #86ad7f;
-  --warn: #c9a45c;
-  --err: #d9593c;
-  --key: transparent;
-  --key-hover: #1a2128;
-  --bevel: none;
-  --seam: none;
-  --press: none;
-  --signal: #86ad7f;
-  --recess: none;
-  --wave-dim: 0.42;
-  --r-card: 6px;
-  --r-ctl: 4px;
-  --r-pill: 4px;
-  --ui: "Atkinson Next", "Segoe UI", sans-serif;
-  --head: "Atkinson Next", "Segoe UI", sans-serif;
-  --mono: "Atkinson Mono", Consolas, monospace;
-  --case: none;
-  --stem-vocals: #d9b45a;
-  --stem-instrumental: #6f9fca;
-  --stem-lead: #e3a35c;
-  --stem-backing: #87b1a1;
-  --stem-drums: #d9654a;
-  --stem-bass: #5c8fd8;
-  --stem-other: #99a877;
-  --stem-guitar: #c58bd0;
-  --stem-piano: #cdb791;
-  --stem-kick: #d9654a;
-  --stem-snare: #e39a48;
-  --stem-toms: #ad7bd3;
-  --stem-hihat: #79b9c1;
-  --stem-cymbals: #cbc068;
-  --stem-dry: #8dc1a8;
-  --stem-reverb: #7d8ed3;
-  --stem-clean: #8dc1a8;
-  --stem-noise: #ad9080;
-  --stem-crowd: #c98a69;
-  color-scheme: dark;
-}
-:root[data-style="brass"][data-theme="light"] {
-  --bg-window: #e9e7e0;
-  --bg-plate: #f3f1ea;
-  --bg-side: #f3f1ea;
-  --bg-content: #e9e7e0;
-  --bg-status: #e2dfd6;
-  --surface: #f3f1ea;
-  --surface-2: #f7f5ef;
-  --raise: #fbfaf5;
-  --well: #dedbd2;
-  --rule: #d2cec3;
-  --rule-2: #b8b3a6;
-  --mute: #7c858a;
-  --text: #4d565c;
-  --text-hi: #1c2126;
-  --accent: #8d6a22;
-  --on-accent: #fbf7ec;
-  --ok: #4f7a48;
-  --warn: #8d6a22;
-  --err: #b6402a;
-  --key-hover: #fbfaf5;
-  --wave-dim: 0.55;
   color-scheme: light;
 }
 
@@ -278,18 +195,8 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
 /* in the desktop window the bar is a real caption: windows runs the move, snap and double-click */
 .native-title .titlebar { app-region: drag; -webkit-app-region: drag; }
 .native-title .titlebar button, .native-title .edges span { app-region: no-drag; -webkit-app-region: no-drag; }
-.titlebar-mark { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-hi); letter-spacing: 0.02em; }
-.mark-tag {
-  padding: 1px 5px;
-  border: 1px solid var(--rule-2);
-  border-radius: 3px;
-  color: var(--mute);
-  font: 600 9.5px var(--mono);
-  letter-spacing: 0.12em;
-  box-shadow: var(--recess), var(--seam);
-}
-:root[data-style="brass"] .mark-tag { display: none; }
-.titlebar-path { display: flex; gap: 7px; min-width: 0; margin-left: 6px; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; }
+.titlebar-mark { font-family: var(--mono); font-size: 13px; font-weight: 600; line-height: 1; color: var(--text-hi); letter-spacing: 0.02em; }
+.titlebar-path { display: flex; align-items: baseline; gap: 7px; line-height: 1; min-width: 0; margin-left: 6px; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; }
 .titlebar-path .path-sep { color: var(--rule-2); }
 .titlebar-path #title-session { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .titlebar-path #title-session:empty, .titlebar-path #title-session:empty ~ *, .titlebar-path:has(#title-session:empty) .path-sep { display: none; }
@@ -327,8 +234,6 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
 .window-controls button:hover svg { stroke: var(--text-hi); }
 #win-close:hover { background: var(--accent); }
 #win-close:hover svg { stroke: var(--on-accent); }
-:root[data-style="brass"] #win-close:hover { background: var(--err); }
-:root[data-style="brass"] #win-close:hover svg { stroke: #fff; }
 .window-controls .glyph-restore, .maximized .window-controls .glyph-max { display: none; }
 .maximized .window-controls .glyph-restore { display: inline; }
 
@@ -373,7 +278,6 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
 .tasks { display: flex; flex-direction: column; gap: 2px; }
 .task-group { margin: 8px 2px 4px; }
 .task-group:first-child { margin-top: 0; }
-:root[data-style="brass"] .module { border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; background: none; margin: 0; padding: 14px 18px; }
 .nav-item {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) auto;
@@ -403,8 +307,6 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
 }
 .nav-item[aria-checked="true"] .nav-item-bracket,
 .nav-item[aria-checked="true"] .nav-item-count { color: var(--accent); }
-:root[data-style="brass"] .nav-item[aria-checked="true"] { color: var(--text-hi); border-color: transparent; box-shadow: inset 2px 0 0 var(--accent); }
-:root[data-style="brass"] .nav-item[aria-checked="true"] .nav-item-bracket { color: var(--accent); }
 
 .rule-head {
   display: flex;
@@ -444,7 +346,6 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
   border-color: var(--rule-2);
   box-shadow: var(--bevel);
 }
-:root[data-style="brass"] .segmented button[aria-checked="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .tier-blurb { margin: 10px 0 6px; color: var(--text); font-family: var(--head); font-size: 12.5px; line-height: 1.4; }
 .tier-models { list-style: none; margin: 0; padding: 0; font-size: 11px; font-family: var(--mono); color: var(--mute); }
 .tier-models li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 4px 0; border-top: 1px dashed var(--rule); }
@@ -826,7 +727,7 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
   font-size: 11.5px;
   color: var(--mute);
 }
-.seg { display: inline-flex; align-items: baseline; gap: 7px; padding: 0 10px; white-space: nowrap; }
+.seg { display: inline-flex; align-self: stretch; align-items: center; gap: 7px; margin: 0; padding: 0 10px; line-height: 1; white-space: nowrap; }
 .seg-k { font-size: 11px; color: var(--mute); }
 .seg-v { color: var(--text); font-variant-numeric: tabular-nums; }
 .seg-v.warn { color: var(--err); }
@@ -835,7 +736,7 @@ button, h1, h2, .rule-head, .nav-item, .tier-blurb, .form-label, .dropzone-title
 .led.on { background: var(--signal); box-shadow: 0 0 6px color-mix(in srgb, var(--signal) 55%, transparent); }
 .led.busy { background: var(--warn); box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 55%, transparent); }
 .led.off { background: var(--err); }
-.seg-btn { border: 0; background: none; font: inherit; height: 100%; }
+.seg-btn { border: 0; background: none; font: inherit; line-height: 1; }
 .seg-btn:hover .seg-v { color: var(--text-hi); }
 .seg-btn.is-update .seg-k, .seg-btn.is-update .seg-v { color: var(--warn); }
 .seg-btn.is-update:hover .seg-v { color: var(--text-hi); }

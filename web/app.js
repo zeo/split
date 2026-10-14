@@ -967,22 +967,15 @@ function openModels() {
 $("open-models").addEventListener("click", openModels);
 $("seg-models").addEventListener("click", openModels);
 
-/* look: style and theme */
+/* look: light or dark */
 
-const STYLES = [{ id: "mk2", label: "MK II" }, { id: "brass", label: "Brass" }];
 const THEMES = [{ id: "system", label: "System" }, { id: "dark", label: "Dark" }, { id: "light", label: "Light" }];
-const look = { style: localStorage.getItem("split.style") || "mk2", theme: localStorage.getItem("split.theme") || "system" };
+const look = { theme: localStorage.getItem("split.theme") || "system" };
 
 function applyLook() {
   const dark = look.theme === "dark" || (look.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-  document.documentElement.dataset.style = look.style;
   for (const lane of state.session?.lanes ?? []) lane.draw();
-  radio($("style-pick"), STYLES, look.style, (id) => {
-    look.style = id;
-    localStorage.setItem("split.style", id);
-    applyLook();
-  });
   radio($("theme-pick"), THEMES, look.theme, (id) => {
     look.theme = id;
     localStorage.setItem("split.theme", id);
@@ -1265,11 +1258,10 @@ function onSnapshot(snapshot) {
   renderStage();
 }
 
-// #job=<id>&task=<id>&style=<id>&theme=<id>&loop=<from>-<to> opens a view directly; style and theme apply to this load only.
+// #job=<id>&task=<id>&theme=<id>&loop=<from>-<to> opens a view directly; the theme applies to this load only.
 // #still renders one snapshot without the live stream, for headless captures that wait on network idle
 function readLink() {
   const link = new URLSearchParams(location.hash.slice(1));
-  if (link.has("style")) look.style = link.get("style");
   if (link.has("theme")) look.theme = link.get("theme");
   if (link.has("task")) state.task = link.get("task");
   if (link.has("job")) state.selected = link.get("job");
