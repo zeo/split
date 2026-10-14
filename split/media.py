@@ -70,7 +70,8 @@ def decode(source: Path, dest: Path) -> Source:
     stream = re.search(r"Audio: [^\n]*?(\d+) Hz, ([^,\n]+)", result.stderr)
     rate = int(stream.group(1)) if stream else WORK_RATE
     layout = stream.group(2).strip() if stream else "stereo"
-    channels = 1 if layout == "mono" else 2
+    # older ffmpeg builds print "1 channels" where newer ones print "mono"
+    channels = 1 if layout == "mono" or layout.startswith("1 channel") else 2
     info = sf.info(dest)
     if info.frames == 0:
         raise MediaError(f"{source.name} has no audio")
