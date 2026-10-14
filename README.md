@@ -48,7 +48,7 @@ uv run python -m split.desktop
 uv run pytest
 ```
 
-You need Python 3.13 and FFmpeg on your PATH. The lockfile pulls CUDA 13.0 builds of PyTorch on Windows and Linux. `packaging/build.ps1` makes the Windows build: it fetches a pinned FFmpeg, builds with PyInstaller from a clean environment, and smoke-tests the result.
+You need Python 3.11 to 3.13 (diffq, which HT Demucs needs, has no Windows wheels for 3.14) and FFmpeg on your PATH. The lockfile pulls CUDA 13.0 builds of PyTorch on Windows and Linux. `packaging/build.ps1` makes the Windows build: it fetches a pinned FFmpeg, builds with PyInstaller from a clean environment, and smoke-tests the result.
 
 ## How it works
 

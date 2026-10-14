@@ -5,7 +5,7 @@ description = "Local stem separation studio"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "audio-separator[cpu]==0.47.0",
     "torch==2.13.0",
