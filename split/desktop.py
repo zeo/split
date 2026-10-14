@@ -14,9 +14,6 @@ from pathlib import Path
 
 from . import __version__, paths
 
-EXTENSIONS = "mp3 wav flac ogg opus m4a aac aif aiff wma mp4 mkv mov webm".split()
-AUDIO_FILTER = f"Audio and video ({';'.join(f'*.{e}' for e in EXTENSIONS)})"
-
 
 def _free_port() -> int:
     with socket.socket() as probe:
@@ -105,8 +102,11 @@ class Bridge:
     def pick_files(self) -> list[str]:
         import webview
 
+        from .media import EXTENSIONS
+
+        audio = f"Audio and video ({';'.join(f'*.{e}' for e in EXTENSIONS)})"
         chosen = self._window.create_file_dialog(
-            webview.FileDialog.OPEN, allow_multiple=True, file_types=(AUDIO_FILTER, "All files (*.*)")
+            webview.FileDialog.OPEN, allow_multiple=True, file_types=(audio, "All files (*.*)")
         )
         return list(chosen or [])
 
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     if "--self-test" in args:
         index = args.index("--self-test")
         return self_test(args[index + 1] if index + 1 < len(args) else None)
-    files = [str(Path(a).resolve()) for a in args if not a.startswith("-") and Path(a).is_file()]
+    files = [str(Path(a).resolve()) for a in args if not a.startswith("-") and Path(a).exists()]
     if _hand_off(files):
         return 0
 
@@ -203,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     bridge._attach(window)
     app.state.focus = lambda: (window.restore(), window.show())
+    app.state.quit = window.destroy
     if files:
         app.state.open_files(files)
 

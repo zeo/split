@@ -1,5 +1,5 @@
 import { api, native, subscribe, whenNative } from "./api.js";
-import { drawWave, formatTime } from "./lanes.js";
+import { drawWave, formatTime, rulerTicks } from "./lanes.js";
 import { Mixer } from "./mixer.js";
 
 const $ = (id) => document.getElementById(id);
@@ -13,10 +13,12 @@ const FORMAT_NOTES = {
 };
 const FORMAT_BITS = { wav: "24-bit", flac: "24-bit", mp3: "320k" };
 const STATUS_TEXT = { queued: "Waiting", cancelled: "Cancelled", done: "Done" };
+const ORIGINAL = "original";
 // stem pigments live in the active style's tokens; canvas drawing needs the resolved value
 const stemVar = (stem) => `var(--stem-${stem}, var(--mute))`;
 const colorOf = (stem) => getComputedStyle(document.documentElement).getPropertyValue(`--stem-${stem}`).trim() || "#9a9a9a";
 const megabytes = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
+const failed = (error) => alert(error.message);
 
 const saved = JSON.parse(localStorage.getItem("split.settings") || "{}");
 const state = {
@@ -308,11 +310,31 @@ function stage(items) {
   const known = new Set(state.staged.map((s) => s.key));
   for (const item of items) if (!known.has(item.key)) state.staged.push(item);
   state.selected = null;
+  notice("");
   renderStage();
+}
+
+function notice(text) {
+  $("intake-notice").textContent = text;
+  $("intake-notice").classList.toggle("hidden", !text);
 }
 
 const stagePaths = (paths) => stage(paths.map((path) => ({ key: path, path, name: path.split(/[\\/]/).pop() })));
 const stageFiles = (files) => stage([...files].map((file) => ({ key: `${file.name}:${file.size}:${file.lastModified}`, file, name: file.name })));
+const stageStem = (job, stem) => stage([{ key: `stem:${job.id}:${stem}`, stemOf: { job: job.id, stem }, name: `${job.name} (${stem})` }]);
+
+// folders and saved paths go through the server, which expands folders and drops what no longer exists
+async function stageScanned(paths) {
+  try {
+    const found = (await api.post("/api/scan", { paths })).paths;
+    if (found.length) stagePaths(found);
+    else notice("No audio or video files in there.");
+  } catch (error) {
+    state.selected = null;
+    renderStage();
+    notice(error.message);
+  }
+}
 
 function renderStaged() {
   const list = $("staged-list");
@@ -340,11 +362,12 @@ async function separate() {
   const task = currentTask();
   const settings = { task: task.id, tier: currentTier(task).id, isolate: isolating(task), stems: chosenStems(task), format: state.format };
   const paths = state.staged.filter((s) => s.path).map((s) => s.path);
+  const stems = state.staged.filter((s) => s.stemOf).map((s) => s.stemOf);
   const files = state.staged.filter((s) => s.file).map((s) => s.file);
   $("go").disabled = true;
   try {
     const created = [];
-    if (paths.length) created.push(...(await api.post("/api/jobs", { ...settings, paths })).jobs);
+    if (paths.length || stems.length) created.push(...(await api.post("/api/jobs", { ...settings, paths, stems_of: stems })).jobs);
     if (files.length) {
       const form = new FormData();
       for (const [key, value] of Object.entries(settings)) form.append(key, Array.isArray(value) ? value.join(",") : String(value));
@@ -354,7 +377,7 @@ async function separate() {
     state.staged = [];
     state.selected = created[0]?.id ?? null;
   } catch (error) {
-    $("staged-title").textContent = error.message;
+    notice(error.message);
   } finally {
     $("go").disabled = false;
     renderStage();
@@ -393,6 +416,7 @@ function renderJobs() {
   const list = $("jobs");
   const jobs = state.snapshot.jobs;
   $("dock-count").textContent = jobs.length ? String(jobs.length) : "";
+  $("clear-finished").classList.toggle("hidden", !jobs.some((j) => !["queued", "running"].includes(j.status)));
   if (!jobs.length) {
     list.innerHTML = '<li class="jobs-empty">Separated songs show up here and stay for a week.</li>';
     return;
@@ -433,7 +457,7 @@ function renderJobs() {
       button.textContent = label;
       button.addEventListener("click", (event) => {
         event.stopPropagation();
-        run().catch((error) => alert(error.message));
+        run().catch(failed);
       });
       actions.append(button);
     }
@@ -495,7 +519,27 @@ function renderProgress(job) {
   $("progress-clock").textContent = progressClock(job);
   $("progress-cancel").classList.toggle("hidden", !["queued", "running"].includes(job.status));
   $("progress-retry").classList.toggle("hidden", !["error", "cancelled"].includes(job.status));
+  $("progress-copy").classList.toggle("hidden", job.status !== "error");
 }
+
+// everything a bug report needs, without screenshots: the message, the setup, and the worker's traceback
+async function copyDetails() {
+  const job = jobById(state.selected);
+  if (!job) return;
+  const log = await api.get(`/api/jobs/${job.id}/log`).then((r) => r.log, () => "");
+  const device = state.snapshot.device;
+  const lines = [
+    `Split ${$("version").textContent}`,
+    `${taskLine(job)} · ${job.tier}${job.isolate ? " · isolated" : ""}`,
+    `device: ${device ? `${device.name} (${device.kind})` : "unknown"}`,
+    `error (${job.error_kind}): ${job.error}`,
+    log && `\n${log.trim()}`,
+  ];
+  await navigator.clipboard.writeText(lines.filter(Boolean).join("\n"));
+  $("progress-copy").textContent = "Copied";
+  setTimeout(() => ($("progress-copy").textContent = "Copy details"), 1600);
+}
+$("progress-copy").addEventListener("click", () => copyDetails().catch(failed));
 
 function progressClock(job) {
   if (job.status !== "running" || !job.started) return "";
@@ -525,6 +569,8 @@ function closeSession() {
   for (const lane of state.session.lanes) lane.observer.disconnect();
   $("lanes").querySelectorAll(".lane").forEach((n) => n.remove());
   state.session = null;
+  $("ab").setAttribute("aria-pressed", "false");
+  renderLoop();
   renderTransport();
 }
 
@@ -535,19 +581,35 @@ async function openSession(job) {
   state.session = session;
   $("session-name").textContent = job.name;
   const trim = job.trim_db ? ` · trimmed ${Math.abs(job.trim_db).toFixed(1)} dB to stay under 0 dBFS` : "";
-  $("session-meta").textContent = `${taskLine(job)} · ${formatTime(job.duration)}${trim}`;
+  const notes = (job.notes ?? []).map((n) => ` · ${n.toLowerCase()}`).join("");
+  $("session-meta").textContent = `${taskLine(job)} · ${formatTime(job.duration)}${trim}${notes}`;
   $("clock-total").textContent = `/ ${formatTime(job.duration)}`;
   $("export").classList.toggle("hidden", !native());
+  // uploads and stem copies are removed once their job is done, so only path jobs can run again
+  $("run-again").classList.toggle("hidden", job.owns_source);
+  $("ab").classList.toggle("hidden", !job.original);
   $("mix-note").classList.add("hidden");
+  const tracks = stems.map((stem) => ({ stem, url: `/api/jobs/${job.id}/stems/${stem}` }));
+  if (job.original) tracks.unshift({ stem: ORIGINAL, url: `/api/jobs/${job.id}/original` });
   const template = $("lane-template");
-  for (const [index, stem] of stems.entries()) {
+  for (const { stem } of tracks) {
     const node = template.content.firstElementChild.cloneNode(true);
+    const index = stems.indexOf(stem);
     node.style.setProperty("--stem", stemVar(stem));
+    node.classList.toggle("reference", stem === ORIGINAL);
     node.querySelector(".lane-name").textContent = stem;
-    node.querySelector(".lane-key").textContent = index < 9 ? String(index + 1) : "";
+    node.querySelector(".lane-key").textContent = index >= 0 && index < 9 ? String(index + 1) : "";
     const save = node.querySelector(".lane-save");
-    save.href = `/api/jobs/${job.id}/stems/${stem}?download=true`;
-    save.download = "";
+    const process = node.querySelector(".lane-process");
+    if (stem === ORIGINAL) {
+      save.remove();
+      process.remove();
+    } else {
+      save.href = `/api/jobs/${job.id}/stems/${stem}?download=true`;
+      save.download = "";
+      process.title = `Stage the ${stem} stem as a new file to separate or clean up`;
+      process.addEventListener("click", () => stageStem(job, stem));
+    }
     const lane = {
       stem,
       node,
@@ -577,7 +639,17 @@ async function openSession(job) {
   }
   renderRuler();
   renderTransport();
-  const loaded = await mixer.load(stems.map((stem) => ({ stem, url: `/api/jobs/${job.id}/stems/${stem}` })), job.duration);
+  // channels exist as soon as load starts, so mixer state can be set while the audio decodes
+  const loading = mixer.load(tracks, job.duration);
+  mixer.referenceStem = job.original ? ORIGINAL : null;
+  // the original starts muted; A/B or unmuting brings it in
+  if (job.original) session.lanes[0].mute();
+  if (state.linkLoop) {
+    mixer.setRegion(...state.linkLoop);
+    state.linkLoop = null;
+  }
+  renderLoop();
+  const loaded = await loading;
   if (state.session !== session || !loaded) return;
   session.ready = true;
   if (mixer.mode === "media") {
@@ -590,19 +662,94 @@ async function openSession(job) {
 function renderRuler() {
   const ticks = $("ruler-ticks");
   const duration = state.session?.job.duration || 0;
-  ticks.replaceChildren();
-  if (!duration || !ticks.clientWidth) return;
-  // pick the smallest step that keeps labels at least ~70px apart
-  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
-  const step = steps.find((s) => (s / duration) * ticks.clientWidth >= 70) ?? 900;
-  for (let t = 0; t <= duration; t += step / 5) {
+  ticks.querySelectorAll(".tick").forEach((n) => n.remove());
+  for (const { time, major } of rulerTicks(duration, ticks.clientWidth)) {
     const tick = document.createElement("span");
-    const major = Math.abs(t / step - Math.round(t / step)) < 1e-6;
-    tick.className = major ? "" : "minor";
-    tick.style.left = `${(t / duration) * 100}%`;
-    if (major) tick.textContent = formatTime(t);
+    tick.className = major ? "tick" : "tick minor";
+    tick.style.left = `${(time / duration) * 100}%`;
+    if (major) tick.textContent = formatTime(time);
     ticks.append(tick);
   }
+  renderLoop();
+}
+
+// drag across the ruler to set a loop, click to seek, shift-click to clear the loop
+let draftRegion = null;
+
+function wireRuler() {
+  const ticks = $("ruler-ticks");
+  const timeAt = (event) => {
+    const box = ticks.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)) * mixer.duration;
+  };
+  ticks.addEventListener("pointerdown", (event) => {
+    if (!state.session?.ready || event.button !== 0) return;
+    if (event.shiftKey) {
+      mixer.setRegion(0, 0);
+      renderLoop();
+      return;
+    }
+    ticks.setPointerCapture(event.pointerId);
+    const anchor = timeAt(event);
+    const startX = event.clientX;
+    let dragging = false;
+    const move = (step) => {
+      dragging ||= Math.abs(step.clientX - startX) > 4;
+      if (!dragging) return;
+      draftRegion = { start: Math.min(anchor, timeAt(step)), end: Math.max(anchor, timeAt(step)) };
+      renderLoop();
+    };
+    ticks.addEventListener("pointermove", move);
+    ticks.addEventListener("pointerup", (up) => {
+      ticks.removeEventListener("pointermove", move);
+      draftRegion = null;
+      if (dragging) mixer.setRegion(anchor, timeAt(up));
+      else mixer.seek(anchor);
+      renderLoop();
+    }, { once: true });
+  });
+}
+
+function renderLoop() {
+  const region = draftRegion ?? mixer.region;
+  const duration = mixer.duration || state.session?.job.duration || 0;
+  const band = $("loop-band");
+  const zone = $("loop-zone");
+  const visible = Boolean(region && duration);
+  band.classList.toggle("hidden", !visible);
+  zone.classList.toggle("hidden", !visible);
+  band.classList.toggle("off", !draftRegion && !mixer.looping);
+  zone.classList.toggle("off", !draftRegion && !mixer.looping);
+  if (visible) {
+    const left = `${(region.start / duration) * 100}%`;
+    const width = `${((region.end - region.start) / duration) * 100}%`;
+    Object.assign(band.style, { left, width });
+    const wave = state.session?.lanes[0]?.node.querySelector(".lane-wave");
+    if (wave) {
+      Object.assign(zone.style, {
+        left: `${wave.offsetLeft + (region.start / duration) * wave.clientWidth}px`,
+        width: `${((region.end - region.start) / duration) * wave.clientWidth}px`,
+        height: `${$("lanes").scrollHeight}px`,
+      });
+    }
+  }
+  const loop = $("loop");
+  loop.disabled = !mixer.region;
+  loop.setAttribute("aria-pressed", String(mixer.looping));
+  loop.title = region ? `Loop ${formatTime(region.start, true)} to ${formatTime(region.end, true)} (L)` : "Drag across the time ruler to set a loop";
+}
+
+function toggleLoop() {
+  if (!mixer.region) return;
+  mixer.setLooping(!mixer.looping);
+  renderLoop();
+}
+
+function toggleReference() {
+  if (!state.session?.ready || !mixer.referenceStem) return;
+  mixer.setReference(!mixer.reference);
+  $("ab").setAttribute("aria-pressed", String(mixer.reference));
+  refreshAudible();
 }
 
 function wireLane(lane) {
@@ -699,11 +846,17 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
+$("ab").addEventListener("click", toggleReference);
+$("loop").addEventListener("click", toggleLoop);
+wireRuler();
+$("run-again").addEventListener("click", () => {
+  if (state.session) stageScanned([state.session.job.source]);
+});
 $("zip").addEventListener("click", () => {
   if (state.session) window.location.href = `/api/jobs/${state.session.id}/zip`;
 });
 $("reveal").addEventListener("click", () => {
-  if (state.session) api.post(`/api/jobs/${state.session.id}/reveal`).catch((error) => alert(error.message));
+  if (state.session) api.post(`/api/jobs/${state.session.id}/reveal`).catch(failed);
 });
 $("export").addEventListener("click", async () => {
   const bridge = native();
@@ -766,6 +919,29 @@ function renderModels() {
     }
     list.append(item);
   }
+  const { count, size } = state.catalog.unused;
+  if (count) list.append(leftovers(count, size));
+}
+
+// checkpoints from older builds or swapped-out models that nothing in the catalog loads anymore
+function leftovers(count, size) {
+  const item = document.createElement("li");
+  item.className = "model leftover";
+  const title = document.createElement("div");
+  title.className = "model-title";
+  title.textContent = "Leftover files";
+  const side = document.createElement("div");
+  side.className = "model-side";
+  side.append(actionButton("Remove", async () => {
+    if (!confirm(`Delete ${count} unused ${count === 1 ? "file" : "files"} and free ${megabytes(size)}?`)) return;
+    await api.remove("/api/models/unused");
+    await refreshCatalog();
+  }));
+  const meta = document.createElement("div");
+  meta.className = "model-meta";
+  meta.textContent = `${count} ${count === 1 ? "file" : "files"} no model here uses, ${megabytes(size)}, mostly checkpoints from older versions of Split`;
+  item.append(title, side, meta);
+  return item;
 }
 
 function actionButton(label, run) {
@@ -773,7 +949,7 @@ function actionButton(label, run) {
   button.type = "button";
   button.className = "quiet";
   button.textContent = label;
-  button.addEventListener("click", () => run().catch((error) => alert(error.message)));
+  button.addEventListener("click", () => run().catch(failed));
   return button;
 }
 
@@ -819,6 +995,8 @@ const KEYS = [
   ["Left Right", "Seek 5 seconds, Shift for 1"],
   ["Home", "Back to the start"],
   ["1 to 9", "Solo a lane, Shift to mute"],
+  ["O", "Hear the original mix instead of the stems"],
+  ["L", "Loop on or off; drag across the time ruler to set one, Shift-click it to clear"],
   ["Esc", "Clear solos"],
   ["F1", "This list"],
 ];
@@ -914,6 +1092,12 @@ $("add-files").addEventListener("click", (event) => {
   addFiles();
 });
 $("add-files-top").addEventListener("click", addFiles);
+$("add-folder").addEventListener("click", async (event) => {
+  event.stopPropagation();
+  const folder = await native()?.pick_folder();
+  if (folder) stageScanned([folder]);
+});
+whenNative(() => $("folder-choice").classList.remove("hidden"));
 $("dropzone").addEventListener("click", addFiles);
 $("file-input").addEventListener("change", (event) => {
   stageFiles(event.target.files);
@@ -962,8 +1146,12 @@ document.addEventListener("keydown", (event) => {
     const step = (event.shiftKey ? 1 : 5) * (event.key === "ArrowLeft" ? -1 : 1);
     mixer.seek(mixer.position() + step);
   } else if (/^Digit[1-9]$/.test(event.code)) {
-    const lane = state.session.lanes[Number(event.code.slice(5)) - 1];
+    const lane = state.session.lanes.filter((l) => l.stem !== ORIGINAL)[Number(event.code.slice(5)) - 1];
     if (lane) event.shiftKey ? lane.mute() : lane.solo();
+  } else if (letter === "o") {
+    toggleReference();
+  } else if (letter === "l") {
+    toggleLoop();
   } else if (event.key === "Escape") {
     for (const lane of state.session.lanes) {
       const solo = lane.node.querySelector(".solo");
@@ -971,6 +1159,38 @@ document.addEventListener("keydown", (event) => {
     }
   }
 });
+
+/* updates: the rot installer owns installs; split only asks it and hands over */
+
+function renderUpdate(update) {
+  const seg = $("seg-update");
+  const available = Boolean(update?.available);
+  seg.classList.toggle("hidden", !available);
+  $("seg-update-sep").classList.toggle("hidden", !available);
+  if (!available) return;
+  $("update-version").textContent = update.version;
+  $("update-title").textContent = `Split ${update.version}`;
+  $("update-notes").textContent = update.notes || "No release notes were published with this version.";
+}
+
+$("seg-update").addEventListener("click", () => {
+  $("update-error").classList.add("hidden");
+  $("update-sheet").showModal();
+});
+$("update-install").addEventListener("click", async () => {
+  const button = $("update-install");
+  button.disabled = true;
+  try {
+    await api.post("/api/update");
+    button.textContent = "Closing for the update";
+  } catch (error) {
+    $("update-error").textContent = error.message;
+    $("update-error").classList.remove("hidden");
+    button.disabled = false;
+  }
+});
+
+$("clear-finished").addEventListener("click", () => api.remove("/api/jobs").catch(failed));
 
 /* boot */
 
@@ -1017,8 +1237,13 @@ function onSnapshot(snapshot) {
   if (state.openedSeq === null) state.openedSeq = snapshot.opened.seq;
   else if (snapshot.opened.seq !== state.openedSeq) {
     state.openedSeq = snapshot.opened.seq;
-    stagePaths(snapshot.opened.paths);
+    if (snapshot.opened.paths.length) stagePaths(snapshot.opened.paths);
+    if (snapshot.opened.error) {
+      state.selected = null;
+      notice(snapshot.opened.error);
+    }
   }
+  renderUpdate(snapshot.update);
   const finished = Object.entries(snapshot.downloads).some(([id, d]) => d.status === "done" && before[id]?.status !== "done");
   const jobDone = snapshot.jobs.some((j) => j.status === "done" && j.finished && Date.now() / 1000 - j.finished < 3);
   if (finished || jobDone) refreshCatalog();
@@ -1027,7 +1252,7 @@ function onSnapshot(snapshot) {
   renderStage();
 }
 
-// #job=<id>&task=<id>&style=<id>&theme=<id> opens a view directly; style and theme apply to this load only.
+// #job=<id>&task=<id>&style=<id>&theme=<id>&loop=<from>-<to> opens a view directly; style and theme apply to this load only.
 // #still renders one snapshot without the live stream, for headless captures that wait on network idle
 function readLink() {
   const link = new URLSearchParams(location.hash.slice(1));
@@ -1035,6 +1260,9 @@ function readLink() {
   if (link.has("theme")) look.theme = link.get("theme");
   if (link.has("task")) state.task = link.get("task");
   if (link.has("job")) state.selected = link.get("job");
+  // loop=12.5-20 opens the session with that stretch looping
+  const loop = link.get("loop")?.split("-").map(Number);
+  if (loop?.length === 2 && loop.every(Number.isFinite)) state.linkLoop = loop;
 }
 
 async function boot() {

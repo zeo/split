@@ -69,6 +69,7 @@
         <p class="view-sub" id="intake-blurb"></p>
       </header>
       <dl class="spec" id="intake-spec"></dl>
+      <p class="intake-notice hidden" id="intake-notice" role="alert"></p>
 
       <section class="staged hidden" id="staged" aria-label="Files ready to separate">
         <div class="staged-head">
@@ -84,7 +85,7 @@
       <div class="dropzone" id="dropzone">
         <span class="bay-label">input bay</span>
         <p class="dropzone-title">Drop songs here</p>
-        <p class="dropzone-sub">or <button class="link" id="add-files" type="button">choose files</button>. Anything ffmpeg reads works, video included.</p>
+        <p class="dropzone-sub">or <button class="link" id="add-files" type="button">choose files</button><span class="hidden" id="folder-choice"> or <button class="link" id="add-folder" type="button">a whole folder</button></span>. Anything ffmpeg reads works, video included.</p>
       </div>
 
       <h2 class="rule-head">Signal path</h2>
@@ -104,8 +105,13 @@
         </button>
         <span class="clock" id="clock">0:00.0</span>
         <span class="clock-total" id="clock-total">/ 0:00</span>
+        <div class="btn-row">
+          <button class="btn latch" id="ab" type="button" aria-pressed="false" title="Hear the original mix instead of the stems (O)">Original<kbd>o</kbd></button>
+          <button class="btn latch" id="loop" type="button" aria-pressed="false" disabled>Loop<kbd>l</kbd></button>
+        </div>
         <span class="grow"></span>
         <div class="btn-row">
+          <button class="btn ghost" id="run-again" type="button" title="Stage this file again with the current settings">Run again</button>
           <button class="btn" id="export" type="button">Export</button>
           <button class="btn" id="zip" type="button">Zip</button>
           <button class="btn ghost" id="reveal" type="button">Show files</button>
@@ -113,7 +119,8 @@
       </div>
       <p class="mix-note hidden" id="mix-note"></p>
       <div class="lanes" id="lanes">
-        <div class="ruler" id="ruler" aria-hidden="true"><span class="ruler-head">time</span><span class="ruler-ticks" id="ruler-ticks"></span></div>
+        <div class="ruler" id="ruler" aria-hidden="true"><span class="ruler-head">time</span><span class="ruler-ticks" id="ruler-ticks" title="Click to jump, drag to loop"><span class="loop-band hidden" id="loop-band"></span></span></div>
+        <div class="loop-zone hidden" id="loop-zone" aria-hidden="true"></div>
         <div class="playhead" id="playhead" aria-hidden="true"></div>
       </div>
     </section>
@@ -133,6 +140,7 @@
         <div class="btn-row">
           <button class="btn ghost" id="progress-cancel" type="button">Cancel</button>
           <button class="btn primary hidden" id="progress-retry" type="button">Try again</button>
+          <button class="btn ghost hidden" id="progress-copy" type="button" title="Copy the error, setup and log for a bug report">Copy details</button>
         </div>
       </div>
     </section>
@@ -142,6 +150,8 @@
     <header class="dock-head">
       <h2>Queue</h2>
       <span class="dock-count" id="dock-count"></span>
+      <span class="grow"></span>
+      <button class="link dock-clear hidden" id="clear-finished" type="button">Clear finished</button>
     </header>
     <ol class="jobs" id="jobs"></ol>
   </section>
@@ -153,6 +163,8 @@
     <span class="seg-sep" aria-hidden="true"></span>
     <span class="seg"><span class="led" id="queue-led"></span><span class="seg-k">queue</span><span class="seg-v" id="queue-state">idle</span></span>
     <span class="grow"></span>
+    <button class="seg seg-btn is-update hidden" id="seg-update" type="button"><span class="led busy"></span><span class="seg-k">update</span><span class="seg-v" id="update-version"></span></button>
+    <span class="seg-sep hidden" id="seg-update-sep" aria-hidden="true"></span>
     <button class="seg seg-btn" id="open-help" type="button"><span class="seg-k">help</span><span class="seg-v proper">F1</span></button>
     <span class="seg-sep" aria-hidden="true"></span>
     <span class="seg"><span class="seg-v" id="version"></span></span>
@@ -190,6 +202,19 @@
   </div>
 </dialog>
 
+<dialog class="sheet small" id="update-sheet" aria-labelledby="update-title">
+  <header class="sheet-head">
+    <h2 id="update-title">Update</h2>
+    <button class="btn ghost" data-close type="button">Close</button>
+  </header>
+  <p class="sheet-sub">Split closes and the rot installer takes over in its own window: it downloads the new version, checks its signature, then reopens Split. Models and finished jobs stay where they are.</p>
+  <div class="sheet-body">
+    <p class="update-notes" id="update-notes"></p>
+    <p class="update-error hidden" id="update-error" role="alert"></p>
+    <div class="btn-row"><button class="btn primary" id="update-install" type="button">Install and restart</button></div>
+  </div>
+</dialog>
+
 <dialog class="sheet small" id="help-sheet" aria-labelledby="help-title">
   <header class="sheet-head">
     <h2 id="help-title">Keys</h2>
@@ -208,7 +233,7 @@
       <button class="sm mute" type="button" title="Mute">M</button>
       <input class="gain" type="range" min="-60" max="6" step="0.5" value="0" aria-label="Gain">
       <span class="gain-read"><span class="gain-db">0.0</span> dB</span>
-      <a class="lane-save" title="Save this stem">Save</a>
+      <span class="lane-acts"><a class="lane-save" title="Save this stem">Save</a><button class="lane-process" type="button">Process</button></span>
       <span class="ladder" aria-hidden="true"><span></span></span>
     </div>
     <div class="lane-wave">

@@ -103,3 +103,20 @@ def expose_ffmpeg() -> None:
         return
     if folder not in os.environ.get("PATH", "").split(os.pathsep):
         os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
+
+
+class NoSpace(OSError):
+    pass
+
+
+def readable_size(size: float) -> str:
+    return f"{size / 1e9:.1f} GB" if size >= 1e9 else f"{max(1, round(size / 1e6))} MB"
+
+
+def require_space(folder: Path, needed: int, purpose: str) -> None:
+    free = shutil.disk_usage(folder).free
+    if free < needed:
+        raise NoSpace(
+            f"{purpose} needs about {readable_size(needed)} free on {folder.anchor or folder}, "
+            f"and only {readable_size(free)} is left"
+        )

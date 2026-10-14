@@ -4,6 +4,13 @@ const BUFFER_LIMIT_STEM_MINUTES = 60;
 const DRIFT_TOLERANCE = 0.035;
 
 const toGain = (db) => (db <= -60 ? 0 : 10 ** (db / 20));
+const MIN_LOOP = 0.25;
+
+// where playback is after `elapsed` seconds of a source that loops between start and end
+export function wrap(elapsed, loop) {
+  if (!loop || elapsed < loop.end) return elapsed;
+  return loop.start + ((elapsed - loop.start) % (loop.end - loop.start));
+}
 
 export class Mixer {
   constructor({ onEnded } = {}) {
@@ -16,6 +23,37 @@ export class Mixer {
     this.playing = false;
     this.mode = "buffer";
     this.generation = 0;
+    this.region = null;
+    this.looping = false;
+    // the stem a/b compares against; while on, it is the only thing heard
+    this.referenceStem = null;
+    this.reference = false;
+  }
+
+  get loop() {
+    return this.looping && this.region ? this.region : null;
+  }
+
+  setRegion(start, end) {
+    const from = Math.max(0, Math.min(start, end));
+    const to = Math.min(this.duration, Math.max(start, end));
+    this.region = to - from >= MIN_LOOP ? { start: from, end: to } : null;
+    this.looping = Boolean(this.region);
+    this.restart();
+  }
+
+  setLooping(on) {
+    this.looping = Boolean(on && this.region);
+    this.restart();
+  }
+
+  setReference(on) {
+    this.reference = Boolean(on && this.referenceStem && this.channels.has(this.referenceStem));
+    this.applyGains();
+  }
+
+  restart() {
+    if (this.playing) this.seek(this.position());
   }
 
   ensureContext() {
@@ -66,7 +104,7 @@ export class Mixer {
       const first = this.channels.values().next().value;
       return first?.element?.currentTime ?? this.offset;
     }
-    return Math.min(this.duration, this.context.currentTime - this.startedAt);
+    return Math.min(this.duration, wrap(this.context.currentTime - this.startedAt, this.loop));
   }
 
   async play() {
@@ -74,6 +112,8 @@ export class Mixer {
     const context = this.ensureContext();
     await context.resume();
     if (this.offset >= this.duration - 0.01) this.offset = 0;
+    const loop = this.loop;
+    if (loop && (this.offset < loop.start || this.offset >= loop.end)) this.offset = loop.start;
     if (this.mode === "media") {
       for (const channel of this.channels.values()) channel.element.currentTime = this.offset;
       await Promise.all([...this.channels.values()].map((c) => c.element.play()));
@@ -82,6 +122,7 @@ export class Mixer {
       for (const channel of this.channels.values()) {
         const source = context.createBufferSource();
         source.buffer = channel.buffer;
+        if (loop) Object.assign(source, { loop: true, loopStart: loop.start, loopEnd: loop.end });
         source.connect(channel.gain);
         source.start(when, this.offset);
         channel.source = source;
@@ -125,7 +166,12 @@ export class Mixer {
   tick() {
     if (!this.playing) return;
     const now = this.position();
-    if (now >= this.duration - 0.005) {
+    const loop = this.loop;
+    if (loop && this.mode === "media" && now >= loop.end) {
+      this.seek(loop.start);
+      return;
+    }
+    if (!loop && now >= this.duration - 0.005) {
       this.halt();
       this.offset = 0;
       this.onEnded?.();
@@ -145,6 +191,7 @@ export class Mixer {
 
   audible(stem) {
     const channel = this.channels.get(stem);
+    if (this.reference) return stem === this.referenceStem;
     const soloing = [...this.channels.values()].some((c) => c.solo);
     return soloing ? channel.solo : !channel.mute;
   }
@@ -177,5 +224,8 @@ export class Mixer {
     }
     this.channels.clear();
     this.offset = 0;
+    this.region = null;
+    this.looping = false;
+    this.reference = false;
   }
 }

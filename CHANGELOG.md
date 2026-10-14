@@ -4,6 +4,30 @@ dates are release-tag dates.
 
 ## [Unreleased]
 
+### app
+- checks for updates through the rot installer and offers them in the status bar; installing closes Split, hands over to the installer and reopens it
+- drop or pick a whole folder; every audio and video file inside is added, up to 500 at a time
+- each job keeps the original mix at the same trim as its stems; Original (O) switches between the two for an A/B
+- drag across the time ruler to loop a stretch; L turns the loop on and off, Shift-click clears it
+- Process on a lane sends that stem to another task, so a vocal can go straight into de-reverb
+- Run again stages the same file with the current settings
+- Copy details puts a failed job's error, setup and traceback on the clipboard
+- the models sheet finds checkpoints nothing uses anymore and removes them in one go
+- Clear finished empties the queue history
+- `#loop=` in the url opens a session with a loop set
+
+### engine
+- a model that runs out of GPU memory retries with shorter chunks before giving up, and the session notes it
+- jobs and downloads check free disk space first and fail with the space they need
+- downloads retry dropped connections and server errors, resuming where they stopped
+- a checkpoint that fails to load reports itself instead of an internal error
+
+### command line
+- `separate` takes folders as well as files
+
+### packaging
+- Python 3.14 is out of range until diffq ships wheels for it
+
 ## [0.3.0] - 2026-10-14
 
 A rewrite. The old build could not run its band tasks once frozen, and its models were a year behind.

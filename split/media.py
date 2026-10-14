@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from .paths import ffmpeg_bin
 WORK_RATE = 44100
 FORMATS = ("wav", "flac", "mp3")
 MEDIA_TYPES = {"wav": "audio/wav", "flac": "audio/flac", "mp3": "audio/mpeg"}
+EXTENSIONS = tuple("mp3 wav flac ogg opus m4a aac aif aiff wma mp4 mkv mov webm".split())
+MAX_FILES = 500
 PEAK_BUCKETS = 2400
 # -0.1 dBFS, leaving room for overshoot when resampling back to the source rate
 CEILING = 0.989
@@ -33,6 +36,22 @@ class Source:
 
 class MediaError(RuntimeError):
     pass
+
+
+def collect(entries: Iterable[Path]) -> list[Path]:
+    """Files as given, plus every audio or video file under any folder, in name order."""
+    found: list[Path] = []
+    for entry in entries:
+        if entry.is_dir():
+            inside = (p for p in entry.rglob("*") if p.suffix[1:].lower() in EXTENSIONS and p.is_file())
+            found += sorted(inside, key=lambda p: str(p).lower())
+        elif entry.is_file():
+            found.append(entry)
+        else:
+            raise MediaError(f"{entry} does not exist")
+        if len(found) > MAX_FILES:
+            raise MediaError(f"That is more than {MAX_FILES} files, add them in smaller batches")
+    return found
 
 
 def _ffmpeg(*args: str | Path) -> subprocess.CompletedProcess:

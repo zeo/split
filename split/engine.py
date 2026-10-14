@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+import gc
 import logging
 import math
 import os
@@ -21,6 +23,10 @@ from .catalog import MODELS, Model, Step, plan
 Emit = Callable[..., None]
 
 _OUTPUT_LABEL = re.compile(r"_\(([^)]+)\)")
+ORIGINAL = "original.flac"
+SHORTER_CHUNKS = "Ran with shorter chunks to fit in GPU memory"
+# a job writes float intermediates per model stem, so leave slack beyond the estimate
+SPARE = 256 << 20
 
 
 class _Bar:
@@ -172,12 +178,50 @@ def describe_device() -> dict:
     return cpu
 
 
+def _out_of_memory(exc: BaseException) -> bool:
+    text = str(exc)
+    return "OutOfMemory" in type(exc).__name__ or "out of memory" in text.lower() or "ALLOC_FAILED" in text
+
+
+def _shrink(instance) -> bool:
+    """Halve the chunk an mdxc model runs on. False when it is already as small as it goes."""
+    config = getattr(instance, "model_data_cfgdict", None)
+    if config is None:
+        return False
+    current = instance.segment_size if instance.override_model_segment_size else config.inference.dim_t
+    smaller = max(64, int(current) // 2)
+    if smaller >= current:
+        return False
+    instance.override_model_segment_size = True
+    instance.segment_size = smaller
+    return True
+
+
+def _free_gpu() -> None:
+    import torch
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def work_bytes(recipe: list[Step], wanted: list[str], duration: float, rate: int, channels: int) -> int:
+    """Disk a job needs at its peak: float wavs for every model stem plus the encoded outputs."""
+    float_second = media.WORK_RATE * 2 * 4
+    model_stems = sum(len(MODELS[m].stems) for step in recipe for m in step.models)
+    averaged = sum(len(step.outputs) for step in recipe if len(step.models) > 1)
+    floats = float_second * (1 + model_stems + averaged + len(wanted))
+    encoded = rate * channels * 4 * (len(wanted) + 1)
+    return int(duration * (floats + encoded)) + SPARE
+
+
 class Runner:
     def __init__(self) -> None:
         self.device = describe_device()
         _silence_progress_bars()
         _speed_up_roformers()
         self.separator = None
+        self.notes: list[str] = []
 
     def _load(self, model: Model, output_dir: Path):
         if self.separator is None:
@@ -223,7 +267,17 @@ class Runner:
         separator = self._load(model, out)
         _Bar.sink = report
         try:
-            produced = separator.separate(str(source))
+            for attempt in range(3):
+                try:
+                    produced = separator.separate(str(source))
+                    break
+                except Exception as exc:
+                    if attempt == 2 or not _out_of_memory(exc) or not _shrink(separator.model_instance):
+                        raise
+                # the failed attempt's tensors are only released once the except block has ended
+                _free_gpu()
+                if SHORTER_CHUNKS not in self.notes:
+                    self.notes.append(SHORTER_CHUNKS)
         finally:
             _Bar.sink = None
         stems: dict[str, Path] = {}
@@ -245,6 +299,7 @@ class Runner:
         recipe = plan(request["task"], request["tier"], request.get("isolate", False))
         wanted = request["stems"]
         fmt = request["format"]
+        self.notes = []
 
         runs = sum(len(step.models) for step in recipe)
         units = 1 + runs + 0.5 + 0.25 * len(wanted)
@@ -261,6 +316,11 @@ class Runner:
         progress("decode", "Reading audio")
         mix = work / "mix.wav"
         source = media.decode(Path(request["source"]), mix)
+        paths.require_space(
+            job_dir,
+            work_bytes(recipe, wanted, source.duration, source.sample_rate, source.channels),
+            "Separating this song",
+        )
         done += 1
         emit(duration=source.duration, device=self.device["kind"])
 
@@ -313,8 +373,20 @@ class Runner:
             outputs[stem] = name
             done += 0.25
             progress("encode", f"Wrote {stem}")
+        original = None
+        if request.get("original", True):
+            # the mix at the same trim, so switching to it in the player is level-matched and sample-aligned
+            original = ORIGINAL
+            media.encode(mix, job_dir / original, "flac", source, gain)
+            media.write_peaks(mix, peaks_dir / "original.json")
         shutil.rmtree(work, ignore_errors=True)
-        return {"outputs": outputs, "duration": source.duration, "trim_db": round(20 * math.log10(gain), 2)}
+        return {
+            "outputs": outputs,
+            "original": original,
+            "duration": source.duration,
+            "trim_db": round(20 * math.log10(gain), 2),
+            "notes": list(self.notes),
+        }
 
     def _combine(self, step: Step, results: list[dict[str, Path]], out: Path) -> dict[str, Path]:
         if len(results) == 1:
@@ -356,8 +428,15 @@ class Runner:
 
 def classify_error(exc: BaseException) -> tuple[str, str]:
     name = type(exc).__name__
-    if "OutOfMemory" in name or "out of memory" in str(exc).lower():
+    if _out_of_memory(exc):
         return "oom", "The GPU ran out of memory. Close other GPU-heavy apps or pick a lighter quality tier."
+    if isinstance(exc, paths.NoSpace):
+        return "disk", f"{exc}. Free some space or remove old jobs, then try again."
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        return "disk", "The disk filled up while writing. Free some space, then try again."
+    if isinstance(exc, SystemExit):
+        # audio-separator exits the process when a checkpoint fails to load
+        return "model", "A model failed to load. Remove it under Models, download it again, then retry."
     if isinstance(exc, media.MediaError):
         return "input", str(exc)
     if isinstance(exc, urllib.error.URLError | TimeoutError | ConnectionError):

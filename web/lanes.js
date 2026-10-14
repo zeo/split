@@ -44,3 +44,14 @@ export function formatTime(seconds, precise = false) {
   const whole = Math.floor(rest).toString().padStart(2, "0");
   return precise ? `${minutes}:${whole}.${Math.floor((rest % 1) * 10)}` : `${minutes}:${whole}`;
 }
+
+// ruler marks: the smallest step that keeps labels about 70px apart, with four minor marks between
+const RULER_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+
+export function rulerTicks(duration, width) {
+  if (!duration || !width) return [];
+  const step = RULER_STEPS.find((s) => (s / duration) * width >= 70) ?? 900;
+  const ticks = [];
+  for (let i = 0; i * (step / 5) <= duration + 1e-9; i++) ticks.push({ time: i * (step / 5), major: i % 5 === 0 });
+  return ticks;
+}

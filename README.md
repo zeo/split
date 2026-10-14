@@ -2,11 +2,11 @@
 
 Split takes a song apart on your own GPU: vocals, karaoke, four or six band stems, a drum kit, and cleanup passes for reverb, noise and crowds. It runs the strongest separation models you can download, so nothing gets uploaded and nothing gets rate-limited.
 
-Drop files on the window, pick a task, and each stem lands in its own lane. Solo, mute and ride the gain to check the split, then save stems one at a time, export them all to a folder, or grab a zip.
+Drop files or whole folders on the window, pick a task, and each stem lands in its own lane under the original mix. Solo, mute and ride the gain to check the split, flip to the original with O, or loop a bar by dragging across the ruler. Save stems one at a time, export them all to a folder, grab a zip, or send one stem on to another task, like a vocal into de-reverb.
 
 ## Install
 
-On Windows, install it with the rot installer, or run `split-<version>-online-setup.exe` from the [releases page](https://github.com/zeo/split/releases). The online setup is the rot installer itself. It downloads Split in parts, checks the signature, and keeps it updated. The app is about 4.4 GB on disk, most of it the CUDA build of PyTorch.
+On Windows, install it with the rot installer, or run `split-<version>-online-setup.exe` from the [releases page](https://github.com/zeo/split/releases). The online setup is the rot installer itself. It downloads Split in parts, checks the signature, and keeps it updated: when a new version is out, Split shows it in the status bar and installs it on request. The app is about 4.4 GB on disk, most of it the CUDA build of PyTorch.
 
 You need an NVIDIA RTX 20-series card or newer and a driver from the R580 branch or later. Older cards and machines without a supported GPU fall back to the CPU, which works but takes minutes per song. Model weights download the first time a task needs them: 270 MB for Vocals, 700 MB for 4 or 6 stems, up to 2.1 GB for Instrumental Ultra.
 
@@ -33,12 +33,13 @@ The picks follow the [MVSEP leaderboards](https://mvsep.com/quality_checker/mult
 ```
 split separate song.flac --task band6 --format flac --output stems
 split separate *.mp3 --task vocals --tier ultra --stems vocals
+split separate ~/Music/album --task karaoke
 split models
 split download leap-xe-voc sw
 split serve --port 8000
 ```
 
-`separate` takes any number of files and anything FFmpeg can read, video included. `--json` prints progress as JSON lines for scripts. `serve` runs the same interface in your browser.
+`separate` takes any number of files or folders and anything FFmpeg can read, video included. `--json` prints progress as JSON lines for scripts. `serve` runs the same interface in your browser.
 
 ## Run from source
 
@@ -53,7 +54,7 @@ You need Python 3.11 to 3.13 (diffq, which HT Demucs needs, has no Windows wheel
 ## How it works
 
 - `split/catalog.py` is the single list of models, tasks and tiers. Every weight file is pinned by URL, size and SHA-256, so a mirror that swaps a file gets refused.
-- Separation runs in a worker process (`split/engine.py`) that owns the GPU. Jobs run one at a time, a cancel kills and respawns the worker to free VRAM, and a crash fails the job instead of the app.
+- Separation runs in a worker process (`split/engine.py`) that owns the GPU. Jobs run one at a time, a cancel kills and respawns the worker to free VRAM, and a crash fails the job instead of the app. A model that runs out of GPU memory gets a second and third try on half-length chunks.
 - Models run through [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) with three changes:
   - Its per-stem peak normalization is off, so stems sum back to the mix.
   - Rotary embeddings run in half precision with cached angles.

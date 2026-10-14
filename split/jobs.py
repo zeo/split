@@ -90,7 +90,7 @@ class Jobs:
         self.version = 0
         self.current: str | None = None
         self.cancel_requested = False
-        self.opened: dict = {"seq": 0, "paths": []}
+        self.opened: dict = {"seq": 0, "paths": [], "error": None}
         self._stopping = False
         self._load()
         self._thread = threading.Thread(target=self._loop, name="split-supervisor", daemon=True)
@@ -131,6 +131,17 @@ class Jobs:
     def _changed(self) -> None:
         self.version += 1
         self.lock.notify_all()
+
+    def touch(self) -> None:
+        """Wake event listeners when something outside the queue changed what the page shows."""
+        with self.lock:
+            self._changed()
+
+    def busy(self) -> bool:
+        with self.lock:
+            return any(r["status"] in ACTIVE for r in self.records.values()) or any(
+                d["status"] in ACTIVE for d in self.downloads.values()
+            )
 
     def submit(self, spec: dict) -> dict:
         record = {
@@ -208,6 +219,17 @@ class Jobs:
         self._discard(record)
         return True
 
+    def clear_finished(self) -> int:
+        with self.lock:
+            doomed = [r for r in self.records.values() if r["status"] in FINISHED]
+            for record in doomed:
+                del self.records[record["id"]]
+            if doomed:
+                self._changed()
+        for record in doomed:
+            self._discard(record)
+        return len(doomed)
+
     def _discard(self, record: dict) -> None:
         shutil.rmtree(self.root / record["id"], ignore_errors=True)
         if record.get("owns_source"):
@@ -238,10 +260,10 @@ class Jobs:
                 "opened": dict(self.opened),
             }
 
-    def offer(self, files: list[str]) -> None:
+    def offer(self, files: list[str], error: str | None = None) -> None:
         """Files handed to the app from outside the page: drops, a second launch, open-with."""
         with self.lock:
-            self.opened = {"seq": self.opened["seq"] + 1, "paths": list(files)}
+            self.opened = {"seq": self.opened["seq"] + 1, "paths": list(files), "error": error}
             self._changed()
 
     def sweep(self, now: float | None = None) -> int:
@@ -367,13 +389,15 @@ class Jobs:
                     outputs=result["outputs"],
                     duration=result["duration"],
                     trim_db=result.get("trim_db", 0.0),
+                    notes=result.get("notes", []),
+                    original=result.get("original"),
                 )
             elif result["type"] == "cancelled":
                 shutil.rmtree(self.root / job_id / "work", ignore_errors=True)
                 self._finish(record, "cancelled")
             else:
                 if trace := result.get("trace"):
-                    (self.root / job_id / "error.log").write_text(trace)
+                    (self.root / job_id / "error.log").write_text(trace, encoding="utf-8")
                 self._finish(record, "error", error=result["message"], error_kind=result["kind"])
 
     def _run_download(self, model_id: str) -> None:

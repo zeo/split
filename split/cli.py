@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     run = commands.add_parser("separate", help="split audio files into stems")
-    run.add_argument("inputs", nargs="+", type=Path, help="audio or video files")
+    run.add_argument("inputs", nargs="+", type=Path, help="audio or video files, or folders of them")
     run.add_argument(
         "-o", "--output", type=Path, default=Path("stems"), help="output folder (default: ./stems)"
     )
@@ -101,9 +101,13 @@ def _separate(args: argparse.Namespace) -> int:
         print(f"{task.label} stems are: {', '.join(allowed)}", file=sys.stderr)
         return 2
     stems = [s for s in allowed if not args.stems or s in args.stems]
-    missing = [p for p in args.inputs if not p.is_file()]
-    if missing:
-        print(f"not found: {', '.join(map(str, missing))}", file=sys.stderr)
+    try:
+        inputs = media.collect(args.inputs)
+    except media.MediaError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    if not inputs:
+        print("no audio or video files found", file=sys.stderr)
         return 2
     if args.cpu:
         os.environ["SPLIT_DEVICE"] = "cpu"
@@ -116,7 +120,7 @@ def _separate(args: argparse.Namespace) -> int:
         print(f"{task.label} / {tier} on {runner.device['name']}")
     args.output.mkdir(parents=True, exist_ok=True)
     failures = 0
-    for source in args.inputs:
+    for source in inputs:
 
         def emit(source: Path = source, **event) -> None:
             if args.json:
@@ -133,6 +137,7 @@ def _separate(args: argparse.Namespace) -> int:
                 "isolate": args.isolate,
                 "stems": stems,
                 "format": args.format,
+                "original": False,
             }
             try:
                 result = runner.separate(request, emit)

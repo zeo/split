@@ -70,7 +70,11 @@ class FakeSupervisor:
             (job_dir / name).write_bytes(stem.encode() * 64)
             (job_dir / "peaks" / f"{stem}.json").write_text('{"duration": 1.0, "peak": [0.5], "rms": [0.2]}')
             outputs[stem] = name
-        self.events.put({"type": "done", "key": key, "outputs": outputs, "duration": 1.0})
+        (job_dir / "original.flac").write_bytes(b"mix" * 64)
+        (job_dir / "peaks" / "original.json").write_text('{"duration": 1.0, "peak": [0.9], "rms": [0.4]}')
+        self.events.put(
+            {"type": "done", "key": key, "outputs": outputs, "original": "original.flac", "duration": 1.0}
+        )
 
     def receive(self, timeout: float):
         try:

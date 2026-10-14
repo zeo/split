@@ -1,5 +1,6 @@
 import io
 import zipfile
+from pathlib import Path
 from urllib.parse import unquote
 
 import pytest
@@ -58,7 +59,7 @@ def test_catalog_lists_tasks_models_and_download_state(client):
         ({"task": "vocals", "stems": ["drums"]}, "Pick stems"),
         ({"task": "vocals", "format": "ogg"}, "Format must be"),
         ({"task": "vocals", "paths": []}, "Add at least one file"),
-        ({"task": "vocals", "paths": ["Z:/definitely/missing.wav"]}, "is not a file"),
+        ({"task": "vocals", "paths": ["Z:/definitely/missing.wav"]}, "does not exist"),
     ],
 )
 def test_job_validation(client, body, message):
@@ -169,3 +170,108 @@ def test_web_assets_are_clean_utf8():
 
 def test_ui_assets_are_revalidated(client):
     assert client.get("/app.js").headers["cache-control"] == "no-cache"
+
+
+def song_in(folder, name):
+    path = folder / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x")
+    return path
+
+
+def test_folders_expand_to_the_audio_inside(client, tmp_path):
+    album = tmp_path / "album"
+    song_in(album, "02 b.flac")
+    song_in(album, "01 a.mp3")
+    song_in(album / "bonus", "03 c.wav")
+    song_in(album, "cover.jpg")
+    found = authed(client, "POST", "/api/scan", json={"paths": [str(album)]}).json()["paths"]
+    assert [Path(p).relative_to(album).as_posix() for p in found] == [
+        "01 a.mp3",
+        "02 b.flac",
+        "bonus/03 c.wav",
+    ]
+    created = authed(client, "POST", "/api/jobs", json={"paths": [str(album)], "task": "vocals"}).json()
+    assert [j["name"] for j in created["jobs"]] == ["01 a", "02 b", "03 c"]
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert (
+        authed(client, "POST", "/api/jobs", json={"paths": [str(empty)], "task": "vocals"}).status_code == 400
+    )
+
+
+def test_dropped_folders_reach_the_page_as_files(client, tmp_path):
+    album = tmp_path / "album"
+    song = song_in(album, "a.wav")
+    authed(client, "POST", "/api/focus", json={"paths": [str(album)]})
+    assert client.get("/api/state").json()["opened"]["paths"] == [str(song)]
+
+
+def test_a_stem_can_feed_a_new_job(client, tmp_path):
+    song = song_in(tmp_path, "Song.wav")
+    first = authed(client, "POST", "/api/jobs", json={"paths": [str(song)], "task": "vocals"}).json()
+    parent = wait_for(client.jobs, first["jobs"][0]["id"])
+    body = {"task": "dereverb", "stems_of": [{"job": parent["id"], "stem": "vocals"}]}
+    child = authed(client, "POST", "/api/jobs", json=body).json()["jobs"][0]
+    assert child["name"] == "Song (vocals)"
+    assert child["owns_source"] is True
+    # the copy outlives the job it came from
+    authed(client, "DELETE", f"/api/jobs/{parent['id']}")
+    assert wait_for(client.jobs, child["id"])["status"] == "done"
+    missing = {"task": "dereverb", "stems_of": [{"job": parent["id"], "stem": "vocals"}]}
+    assert authed(client, "POST", "/api/jobs", json=missing).status_code == 404
+
+
+def test_original_mix_is_served_beside_the_stems(client, tmp_path):
+    song = song_in(tmp_path, "a.wav")
+    created = authed(client, "POST", "/api/jobs", json={"paths": [str(song)], "task": "vocals"}).json()
+    job = wait_for(client.jobs, created["jobs"][0]["id"])
+    assert job["original"] == "original.flac"
+    original = client.get(f"/api/jobs/{job['id']}/original")
+    assert original.headers["content-type"] == "audio/flac"
+    assert client.get(f"/api/jobs/{job['id']}/peaks/original").json()["peak"] == [0.9]
+
+
+def test_clearing_history_keeps_active_jobs(make_jobs, tmp_path):
+    jobs = make_jobs("hang")
+    with TestClient(create_app(jobs=jobs, token=TOKEN), base_url="http://127.0.0.1") as hung:
+        song = song_in(tmp_path, "a.wav")
+        body = {"paths": [str(song)], "task": "vocals"}
+        first = authed(hung, "POST", "/api/jobs", json=body).json()["jobs"][0]
+        second = authed(hung, "POST", "/api/jobs", json=body).json()["jobs"][0]
+        authed(hung, "POST", f"/api/jobs/{second['id']}/cancel")
+        assert authed(hung, "DELETE", "/api/jobs").json() == {"deleted": 1}
+        assert [j["id"] for j in hung.get("/api/state").json()["jobs"]] == [first["id"]]
+
+
+def test_error_log_is_readable(client, make_jobs, tmp_path):
+    jobs = make_jobs("fail")
+    with TestClient(create_app(jobs=jobs, token=TOKEN), base_url="http://127.0.0.1") as failing:
+        song = song_in(tmp_path, "a.wav")
+        job = authed(failing, "POST", "/api/jobs", json={"paths": [str(song)], "task": "vocals"}).json()[
+            "jobs"
+        ][0]
+        wait_for(jobs, job["id"])
+        assert failing.get(f"/api/jobs/{job['id']}/log").status_code == 404
+        (jobs.job_dir(job["id"]) / "error.log").write_text("Traceback: boom", encoding="utf-8")
+        assert failing.get(f"/api/jobs/{job['id']}/log").json() == {"log": "Traceback: boom"}
+
+
+def test_unused_weights_are_listed_and_removed(client):
+    from split import paths
+
+    models = paths.models_dir()
+    (models / "old_model.ckpt").write_bytes(b"x" * 1000)
+    (models / "BS-Roformer-SW.ckpt.part").write_bytes(b"x" * 10)
+    (models / "BS-Roformer-SW.yaml").write_bytes(b"kept")
+    assert client.get("/api/catalog").json()["unused"] == {"count": 1, "size": 1000}
+    assert authed(client, "DELETE", "/api/models/unused").json() == {"freed": 1000}
+    assert sorted(p.name for p in models.iterdir()) == ["BS-Roformer-SW.ckpt.part", "BS-Roformer-SW.yaml"]
+
+
+def test_malformed_bodies_are_refused_cleanly(client):
+    bad = client.post(
+        "/api/jobs", content=b"{nope", headers={"x-split-token": TOKEN, "content-type": "application/json"}
+    )
+    assert bad.status_code == 400
+    assert authed(client, "POST", "/api/scan", json=["a"]).status_code == 400

@@ -57,7 +57,7 @@ def test_cli_rejects_unknown_stems(tmp_path, capsys):
 
 def test_cli_rejects_missing_inputs(tmp_path, capsys):
     assert cli.main(["separate", str(tmp_path / "gone.wav")]) == 2
-    assert "not found" in capsys.readouterr().err
+    assert "does not exist" in capsys.readouterr().err
 
 
 def test_cli_rejects_unknown_tier(tmp_path):
