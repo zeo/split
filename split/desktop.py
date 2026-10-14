@@ -188,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
 
     bridge = Bridge()
     window = webview.create_window(
-        "Split",
+        "split",
         f"http://127.0.0.1:{port}/",
         js_api=bridge,
         width=1320,

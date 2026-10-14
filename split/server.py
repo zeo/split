@@ -99,7 +99,7 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
         holder["updates"].stop()
         holder["jobs"].stop()
 
-    app = FastAPI(title="Split", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title="split", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     app.state.token = token
     app.state.focus = lambda: None

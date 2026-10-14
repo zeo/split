@@ -92,7 +92,7 @@ def test_install_hands_off_and_relaunches(installer, monkeypatch):
     tracker.install(42)
     (command,) = launched
     assert "update split --wait-pid 42" in command
-    assert 'start "" "' in command and "Split.exe" in command
+    assert 'start "" "' in command and "split.exe" in command
 
 
 def test_current_release_is_not_an_update(installer):

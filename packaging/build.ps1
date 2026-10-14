@@ -1,4 +1,4 @@
-# builds dist/Split from a clean locked environment and smoke-tests the result
+# builds dist/split from a clean locked environment and smoke-tests the result
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -37,11 +37,11 @@ if (-not (Test-Path (Join-Path $ffmpegDir 'ffmpeg.exe'))) {
 }
 
 Invoke-Uv @('sync', '--locked', '--python', '3.13', '--extra', 'desktop', '--group', 'build', '--no-default-groups')
-Remove-Item -Recurse -Force (Join-Path $root 'dist\Split') -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force (Join-Path $root 'dist\split') -ErrorAction SilentlyContinue
 Invoke-Uv @('run', '--no-sync', 'pyinstaller', 'packaging\split.spec', '--noconfirm', '--clean',
   '--distpath', 'dist', '--workpath', 'build\pyinstaller')
 
-$exe = Join-Path $root 'dist\Split\Split.exe'
+$exe = Join-Path $root 'dist\split\split.exe'
 $reportFile = Join-Path $env:TEMP 'split-self-test.json'
 Remove-Item $reportFile -ErrorAction SilentlyContinue
 $test = Start-Process -FilePath $exe -ArgumentList @('--self-test', $reportFile) -Wait -PassThru

@@ -139,7 +139,7 @@ class Updates:
             exe, root = self._exe, self._root
         if not ready:
             raise UpdateError("There is no update to install")
-        relaunch = Path(root) / "Split.exe"
+        relaunch = Path(root) / "split.exe"
         # a console of its own shows download progress; a failure stays on screen until a key is pressed
         script = (
             f'title Updating Split & "{exe}" update {APP} --wait-pid {pid} && start "" "{relaunch}" || pause'

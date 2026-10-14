@@ -489,10 +489,10 @@ function renderStage() {
     closeSession();
     renderStaged();
     show(state.staged.length ? ["staged", "intake"] : ["intake"]);
-    document.title = "Split";
+    document.title = "split";
     return;
   }
-  document.title = `${job.name} · Split`;
+  document.title = `${job.name} · split`;
   if (job.status === "done") {
     show(["session"]);
     if (state.session?.id !== job.id) openSession(job);

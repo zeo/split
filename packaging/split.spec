@@ -1,4 +1,4 @@
-# windows desktop build: dist/Split/Split.exe plus _internal/
+# windows desktop build: dist/split/split.exe plus _internal/
 # run through packaging/build.ps1, which fetches the pinned ffmpeg into build/ffmpeg first
 from pathlib import Path
 
@@ -56,10 +56,10 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Split",
+    name="split",
     icon=str(ROOT / "assets" / "icon.ico"),
     console=False,
     upx=False,
     disable_windowed_traceback=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="Split", upx=False)
+coll = COLLECT(exe, a.binaries, a.datas, name="split", upx=False)
