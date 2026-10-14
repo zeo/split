@@ -28,7 +28,7 @@ split = "split.cli:main"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28",
+    "httpx2>=2.13",
     "pytest>=8.4",
     "ruff>=0.14",
 ]
