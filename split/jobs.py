@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import multiprocessing
 import queue
 import shutil
@@ -13,7 +14,7 @@ from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 
-from . import paths
+from . import catalog, paths, weights
 
 KEEP_DAYS = 7
 KEEP_JOBS = 40
@@ -91,6 +92,7 @@ class Jobs:
         self.current: str | None = None
         self.cancel_requested = False
         self.opened: dict = {"seq": 0, "paths": [], "error": None}
+        self.prefetching: set[str] = set()
         self._stopping = False
         self._load()
         self._thread = threading.Thread(target=self._loop, name="split-supervisor", daemon=True)
@@ -371,6 +373,9 @@ class Jobs:
             self._save(record)
             self._changed()
             request = {"kind": "separate", "key": job_id, "job_dir": str(self.root / job_id), **record}
+            upcoming = next((self.records[key] for kind, key in self.pending if kind == "job"), None)
+        if upcoming is not None:
+            self.prefetch(upcoming)
 
         def on_event(event: dict) -> None:
             with self.lock:
@@ -420,6 +425,29 @@ class Jobs:
             else:
                 state.update(status="error", error=result["message"])
             self._changed()
+
+    def prefetch(self, record: dict) -> None:
+        """Fetch the weights the next job needs while the current one keeps the gpu busy."""
+        steps = catalog.plan(record["task"], record["tier"], record.get("isolate", False))
+        for model_id in dict.fromkeys(m for step in steps for m in step.models):
+            model = catalog.MODELS[model_id]
+            with self.lock:
+                if model_id in self.prefetching or not weights.missing_files(model, deep=False):
+                    continue
+                self.prefetching.add(model_id)
+            threading.Thread(
+                target=self._prefetch, args=(model,), name=f"split-prefetch-{model_id}", daemon=True
+            ).start()
+
+    def _prefetch(self, model) -> None:
+        try:
+            weights.fetch(model)
+        except Exception:
+            # the job itself retries the download and reports whatever still fails
+            logging.getLogger(__name__).warning("prefetching %s failed", model.id, exc_info=True)
+        finally:
+            with self.lock:
+                self.prefetching.discard(model.id)
 
     def cancel_download(self, model_id: str) -> None:
         with self.lock:

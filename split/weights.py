@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import os
+import sys
 import threading
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import paths
@@ -51,16 +54,50 @@ def fetch(model: Model, progress: Progress | None = None) -> None:
         paths.require_space(paths.models_dir(), total - partial + SPARE, f"Downloading {model.label}")
     done = 0
     for file in todo:
-        _download_with_retries(file, lambda n, base=done: progress and progress(base + n, total))
+        # the app prefetches in its own process while the worker may want the same file
+        with _claim(file):
+            if not _trusted(file):
+                _download_with_retries(file, lambda n, base=done: progress and progress(base + n, total))
         done += file.size
         if progress:
             progress(done, total)
 
 
+@contextmanager
+def _claim(file: WeightFile) -> Iterator[None]:
+    """Hold a lock on one weight file across processes; the os drops it if the holder dies."""
+    lock = file_path(file).with_name(file.name + ".lock")
+    with lock.open("a+b") as handle:
+        if sys.platform == "win32":
+            import msvcrt
+
+            handle.seek(0)
+            while True:
+                try:
+                    # blocks for about ten seconds per attempt, then raises
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def unused() -> list[Path]:
     """Files in the models folder that no catalog model names: older checkpoints and caches."""
     names = file_names()
-    keep = names | {_ledger_path().name} | {f"{name}.part" for name in names}
+    keep = names | {_ledger_path().name} | {f"{name}.{tail}" for name in names for tail in ("part", "lock")}
     return sorted(p for p in paths.models_dir().iterdir() if p.is_file() and p.name not in keep)
 
 
@@ -163,7 +200,8 @@ def _stamp(path: Path) -> list:
 
 
 def _save_ledger(ledger: dict[str, list]) -> None:
-    temporary = _ledger_path().with_suffix(".tmp")
+    # the app and the worker both record verified files, so each writes its own temporary
+    temporary = _ledger_path().with_suffix(f".{os.getpid()}.tmp")
     temporary.write_text(json.dumps(ledger))
     temporary.replace(_ledger_path())
 

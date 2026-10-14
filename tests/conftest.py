@@ -1,5 +1,6 @@
 import queue
 import time
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,15 @@ from split.jobs import FINISHED, Jobs
 def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("SPLIT_HOME", str(tmp_path / "home"))
     return tmp_path / "home"
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    # queued jobs prefetch real weights; tests must never reach the network
+    def refuse(*args, **kwargs):
+        raise AssertionError("tests do not download")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
 
 
 class FakeSupervisor:

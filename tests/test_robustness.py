@@ -79,3 +79,49 @@ def test_collect_caps_huge_folders(tmp_path, monkeypatch):
         media.collect([tmp_path])
     with pytest.raises(media.MediaError, match="does not exist"):
         media.collect([tmp_path / "nope.wav"])
+
+
+def test_one_process_downloads_a_file_while_the_other_waits(monkeypatch):
+    import threading
+    import time
+
+    model = catalog.MODELS["deux"]
+    downloads = []
+
+    trusted = set()
+
+    def download(file, progress):
+        downloads.append(file.name)
+        time.sleep(0.2)
+        trusted.add(file.name)
+
+    monkeypatch.setattr(weights, "_download_with_retries", download)
+    monkeypatch.setattr(weights, "missing_files", lambda m, deep=True: list(m.files))
+    monkeypatch.setattr(weights, "_trusted", lambda f, deep=True: f.name in trusted)
+    workers = [threading.Thread(target=weights.fetch, args=(model,)) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    assert sorted(downloads) == sorted(f.name for f in model.files)
+
+
+def test_the_next_job_prefetches_its_weights(make_jobs, tmp_path, monkeypatch):
+    from conftest import wait_for
+
+    fetched = []
+    monkeypatch.setattr(weights, "fetch", lambda model, progress=None: fetched.append(model.id))
+    jobs = make_jobs()
+    spec = {
+        "name": "a",
+        "source": str(tmp_path / "a.wav"),
+        "tier": "best",
+        "stems": ["vocals"],
+        "format": "wav",
+    }
+    first = jobs.submit({**spec, "task": "vocals"})
+    second = jobs.submit({**spec, "task": "karaoke", "stems": ["lead"]})
+    jobs.start()
+    wait_for(jobs, second["id"])
+    assert wait_for(jobs, first["id"])["status"] == "done"
+    assert "karaoke-anvuew" in fetched
