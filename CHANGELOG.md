@@ -4,6 +4,9 @@ dates are release-tag dates.
 
 ## [Unreleased]
 
+### fixes
+- mono files are read as mono on Linux, where older ffmpeg builds describe them as "1 channels"
+
 ## [0.3.0] - 2026-10-15
 
 A rewrite. The old build could not run its band tasks once frozen, and its models were a year behind.
