@@ -1,16 +1,38 @@
-# Split
+<p align="center">
+  <img src="docs/banner.png" alt="split" width="360">
+</p>
 
-![A six-stem session in Split, with the original mix on top and a loop set across the ruler](docs/screenshot.png)
+split takes a song apart on your own GPU: vocals, karaoke, four or six band stems, a drum kit, and cleanup passes for reverb, noise and crowds. It runs the strongest separation models you can download, so nothing gets uploaded and nothing gets rate-limited.
 
-Split takes a song apart on your own GPU: vocals, karaoke, four or six band stems, a drum kit, and cleanup passes for reverb, noise and crowds. It runs the strongest separation models you can download, so nothing gets uploaded and nothing gets rate-limited.
+![A six-stem session in split, with the original mix on top and a loop set across the ruler](docs/screenshot.png)
+
+- downloads: [GitHub Releases](https://github.com/zeo/split/releases)
+- platform: Windows with an NVIDIA RTX 20-series card or newer
+- license: MIT or Apache-2.0 for the code; see [License](#license) for the models and the packaged build
 
 Drop files on the window or pick a whole folder, pick a task, and each stem lands in its own lane under the original mix. Solo, mute and ride the gain to check the split, flip to the original with O, or loop a bar by dragging across the ruler. Save stems one at a time, export them all to a folder, grab a zip, or send one stem on to another task, like a vocal into de-reverb.
 
 ## Install
 
-On Windows, install it with the rot installer, or run `split-<version>-online-setup.exe` from the [releases page](https://github.com/zeo/split/releases). The online setup is the rot installer itself. It downloads Split in parts, checks the signature, and keeps it updated: when a new version is out, Split shows it in the status bar and installs it on request. The app is about 4.4 GB on disk, most of it the CUDA build of PyTorch.
+Run `split-<version>-online-setup.exe` from the [releases page](https://github.com/zeo/split/releases), or install it with the rot installer if you already have it. The online setup is the rot installer itself: it downloads split in resumable parts (about 2.1 GB), checks the Minisign signature, and adds a Start menu entry and an uninstaller. Installed, split takes 3.1 GB, most of it the CUDA build of PyTorch.
+
+When a new version is out, split shows it in the status bar and installs it when you ask. It holds off while jobs are queued or running, then closes, lets the installer swap the files, and opens again.
 
 You need an NVIDIA RTX 20-series card or newer and a driver from the R580 branch or later. Older cards and machines without a supported GPU fall back to the CPU, which works but takes minutes per song. Model weights download the first time a task needs them: 270 MB for Vocals, 700 MB for 4 or 6 stems, up to 2.1 GB for Instrumental Ultra.
+
+## In the window
+
+| Key | Does |
+|---|---|
+| `Ctrl O`, `Enter` | add files, separate what is waiting |
+| `V I K B S D R N C` | switch task |
+| `Space`, `Left` `Right`, `Home` | play or pause, seek 5 s (1 s with Shift), back to the start |
+| `1` to `9` | solo a lane, Shift to mute |
+| `O` | hear the original mix instead of the stems |
+| `L` | loop on or off; drag across the time ruler to set one |
+| `F1` | every key |
+
+Jobs queue and run one at a time; finished ones survive a restart and stay for a week (the last 40). A failed job has a Copy details button with the error, your setup and the traceback, which is everything a bug report needs. The Look menu switches between the MK II and Brass finishes, in dark or light.
 
 ## Tasks
 
@@ -62,10 +84,18 @@ You need Python 3.11 to 3.13 (diffq, which HT Demucs needs, has no Windows wheel
   - Rotary embeddings run in half precision with cached angles.
   - Flash attention is enabled on every card that supports it. Together these make inference 2.5x to 3.5x faster than float32, with vocal stems within 48 to 53 dB SNR of the float32 output.
 - Input is decoded once by FFmpeg to 44.1 kHz float. Output goes back to the source's own sample rate and channel count. If any stem would clip, all of them get the same trim, so they keep summing to the mix.
-- The window is [pywebview](https://pywebview.flowrl.com) on WebView2, talking to a loopback FastAPI server that accepts only local hosts and a per-launch token. Playback decodes every stem into Web Audio buffers that start on one clock, so soloing two stems never drifts. The title bar is drawn by the page, but dragging and resizing hand off to Windows, so snap and maximize behave like any other window.
+- The window is [pywebview](https://pywebview.flowrl.com) on WebView2, talking to a loopback FastAPI server that accepts only local hosts and a per-launch token. Playback decodes every stem into Web Audio buffers that start on one clock, so soloing two stems never drifts. The title bar is drawn by the page and marked as a WebView2 non-client region, so Windows runs the drag itself: snap, double-click to maximize and the system menu all work.
 
 Settings, models and finished jobs live in `%LOCALAPPDATA%\Split` on Windows, `~/Library/Application Support/Split` on macOS and `~/.local/share/split` on Linux. Set `SPLIT_HOME` to move them.
 
+## What leaves your machine
+
+Your audio never does. split talks to the network for two things: model weights, fetched from GitHub, Hugging Face and Meta's file server the first time a task needs them, and the update check, which the rot installer makes against this repository's releases. There is no telemetry and no account.
+
+## Platforms
+
+The release is a Windows build. From source, split runs wherever PyTorch and FFmpeg do, and there is code for Apple GPUs, but only Windows with an NVIDIA card is tested.
+
 ## License
 
-Split's code is MIT or Apache-2.0, your choice. Model weights belong to their authors, and several are GPL-3.0, non-commercial or unlicensed. The Windows build bundles FFmpeg (GPL-3.0) and diffq (CC-BY-NC-4.0), which makes the packaged app non-commercial. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every model and bundled component with its source.
+split's code is MIT or Apache-2.0, your choice. Model weights belong to their authors, and several are GPL-3.0, non-commercial or unlicensed. The Windows build bundles FFmpeg (GPL-3.0) and diffq (CC-BY-NC-4.0), which makes the packaged app non-commercial. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every model and bundled component with its source.
