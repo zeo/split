@@ -4,7 +4,7 @@
 
 Split takes a song apart on your own GPU: vocals, karaoke, four or six band stems, a drum kit, and cleanup passes for reverb, noise and crowds. It runs the strongest separation models you can download, so nothing gets uploaded and nothing gets rate-limited.
 
-Drop files or whole folders on the window, pick a task, and each stem lands in its own lane under the original mix. Solo, mute and ride the gain to check the split, flip to the original with O, or loop a bar by dragging across the ruler. Save stems one at a time, export them all to a folder, grab a zip, or send one stem on to another task, like a vocal into de-reverb.
+Drop files on the window or pick a whole folder, pick a task, and each stem lands in its own lane under the original mix. Solo, mute and ride the gain to check the split, flip to the original with O, or loop a bar by dragging across the ruler. Save stems one at a time, export them all to a folder, grab a zip, or send one stem on to another task, like a vocal into de-reverb.
 
 ## Install
 

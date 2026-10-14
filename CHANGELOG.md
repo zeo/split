@@ -6,7 +6,7 @@ dates are release-tag dates.
 
 ### app
 - checks for updates through the rot installer and offers them in the status bar; installing closes Split, hands over to the installer and reopens it
-- drop or pick a whole folder; every audio and video file inside is added, up to 500 at a time
+- add a whole folder with the picker under the drop area or by opening Split with it; every audio and video file inside is added, up to 500 at a time
 - each job keeps the original mix at the same trim as its stems; Original (O) switches between the two for an A/B
 - drag across the time ruler to loop a stretch; L turns the loop on and off, Shift-click clears it
 - Process on a lane sends that stem to another task, so a vocal can go straight into de-reverb

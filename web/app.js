@@ -1083,6 +1083,14 @@ window.addEventListener("drop", (event) => {
   stageEl.classList.remove("dropping");
   // the desktop shell reads real paths on the python side and offers them over the event stream
   if (!native() && event.dataTransfer?.files.length) stageFiles(event.dataTransfer.files);
+  const folders = [...(event.dataTransfer?.items ?? [])].some((item) => item.webkitGetAsEntry?.()?.isDirectory);
+  if (native() && folders) {
+    // the webview does not always hand over a dropped folder's path; say so instead of doing nothing
+    const seq = state.snapshot.opened.seq;
+    setTimeout(() => {
+      if (state.snapshot.opened.seq === seq) notice("This window could not read the dropped folder. Use “a whole folder” under the drop area instead.");
+    }, 1500);
+  }
 });
 
 async function addFiles() {
