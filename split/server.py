@@ -400,10 +400,6 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
     def get_update() -> dict:
         return holder["updates"].snapshot()
 
-    @app.post("/api/update/check", dependencies=[Depends(guard)])
-    async def check_update() -> dict:
-        return await asyncio.to_thread(holder["updates"].refresh)
-
     @app.post("/api/update", dependencies=[Depends(guard)])
     def install_update() -> dict:
         if store().busy():
