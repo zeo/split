@@ -580,9 +580,16 @@ async function openSession(job) {
   const session = { id: job.id, job, lanes: [], ready: false };
   state.session = session;
   $("session-name").textContent = job.name;
-  const trim = job.trim_db ? ` · trimmed ${Math.abs(job.trim_db).toFixed(1)} dB to stay under 0 dBFS` : "";
-  const notes = (job.notes ?? []).map((n) => ` · ${n.toLowerCase()}`).join("");
-  $("session-meta").textContent = `${taskLine(job)} · ${formatTime(job.duration)}${trim}${notes}`;
+  const meta = $("session-meta");
+  meta.replaceChildren(`${taskLine(job)} · ${formatTime(job.duration)}`);
+  for (const note of job.notes ?? []) meta.append(` · ${note}`);
+  if (job.trim_db) {
+    // units keep their case even where the style lowercases labels
+    const trim = document.createElement("span");
+    trim.className = "proper";
+    trim.textContent = ` · trimmed ${Math.abs(job.trim_db).toFixed(1)} dB to stay under 0 dBFS`;
+    meta.append(trim);
+  }
   $("clock-total").textContent = `/ ${formatTime(job.duration)}`;
   $("export").classList.toggle("hidden", !native());
   // uploads and stem copies are removed once their job is done, so only path jobs can run again

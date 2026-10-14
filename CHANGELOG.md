@@ -20,6 +20,7 @@ dates are release-tag dates.
 - a model that runs out of GPU memory retries with shorter chunks before giving up, and the session notes it
 - jobs and downloads check free disk space first and fail with the space they need
 - downloads retry dropped connections and server errors, resuming where they stopped
+- while one job runs, the weights for the next queued job download in the background
 - a checkpoint that fails to load reports itself instead of an internal error
 
 ### command line
