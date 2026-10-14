@@ -29,7 +29,7 @@ def installer(monkeypatch, tmp_path):
         calls.append(args)
         return replies[args[0]]
 
-    monkeypatch.setattr(updates, "installer", lambda: exe)
+    monkeypatch.setattr(updates, "installers", lambda: [exe])
     monkeypatch.setattr(updates, "_run", run)
     return exe, replies, calls
 
@@ -52,8 +52,8 @@ def test_versions_compare_as_semver(candidate, current, expected):
 
 def test_check_reads_status_then_release(installer):
     exe, _, calls = installer
-    release = updates.check(exe)
-    assert release == {"version": "9.0.0", "notes": "faster karaoke", "root": "C:/Programs/Split"}
+    release = updates.check([exe])
+    assert release == {"version": "9.0.0", "notes": "faster karaoke", "root": "C:/Programs/Split", "exe": exe}
     assert calls == [("status", "split", "--json"), ("check", "split", "--json")]
 
 
@@ -61,7 +61,7 @@ def test_copies_the_installer_does_not_own_never_offer_updates(installer):
     exe, replies, calls = installer
     replies["status"] = answer("[]")
     with pytest.raises(updates.UpdateError, match="not installed by the rot installer"):
-        updates.check(exe)
+        updates.check([exe])
     assert len(calls) == 1
 
 
@@ -76,7 +76,7 @@ def test_refresh_flags_a_newer_release_and_reports_change(installer):
 
 
 def test_refresh_without_an_installer_stays_quiet(monkeypatch):
-    monkeypatch.setattr(updates, "installer", lambda: None)
+    monkeypatch.setattr(updates, "installers", lambda: [])
     state = updates.Updates(enabled=False).refresh()
     assert state["available"] is False
     assert "not on this computer" in state["error"]
@@ -149,3 +149,23 @@ def test_install_closes_the_window_once_the_installer_starts(client):
     while not client.quits and time.monotonic() < deadline:
         time.sleep(0.05)
     assert client.quits == [1]
+
+
+def test_the_installer_that_owns_split_answers(monkeypatch, tmp_path):
+    shared, personal = tmp_path / "shared.exe", tmp_path / "personal.exe"
+    asked = []
+
+    def run(path, *args):
+        asked.append((path.name, args[0]))
+        if args[0] == "status":
+            # an older shared installer does not know split at all
+            return (
+                answer("", 2, "unknown application 'split'")
+                if path == shared
+                else answer(json.dumps(RECEIPT))
+            )
+        return answer(json.dumps({"version": "9.0.0"}))
+
+    monkeypatch.setattr(updates, "_run", run)
+    assert updates.check([shared, personal])["exe"] == personal
+    assert asked == [("shared.exe", "status"), ("personal.exe", "status"), ("personal.exe", "check")]

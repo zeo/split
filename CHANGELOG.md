@@ -5,6 +5,8 @@ dates are release-tag dates.
 ## [Unreleased]
 
 ### app
+- new app icon: a brushed steel note on a steel tile
+- the update check asks whichever installed rot installer owns Split, so an older shared installer no longer hides updates
 - checks for updates through the rot installer and offers them in the status bar; installing closes Split, hands over to the installer and reopens it
 - add a whole folder with the picker under the drop area or by opening Split with it; every audio and video file inside is added, up to 500 at a time
 - each job keeps the original mix at the same trim as its stems; Original (O) switches between the two for an A/B

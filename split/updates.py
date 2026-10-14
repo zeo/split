@@ -23,7 +23,7 @@ class UpdateError(RuntimeError):
     pass
 
 
-def installer() -> Path | None:
+def installers() -> list[Path]:
     candidates = []
     if paths.frozen():
         here = Path(sys.executable).resolve().parent
@@ -32,7 +32,7 @@ def installer() -> Path | None:
         candidates.append(Path(root) / "rot" / "installer" / INSTALLER)
     if root := os.environ.get("LOCALAPPDATA"):
         candidates.append(Path(root) / "Programs" / "rot-installer" / INSTALLER)
-    return next((c for c in candidates if c.is_file()), None)
+    return [c for c in candidates if c.is_file()]
 
 
 def newer(candidate: str, current: str) -> bool:
@@ -50,18 +50,24 @@ def _run(exe: Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-def check(exe: Path | None = None) -> dict:
-    """Ask the installer for the newest release. Raises UpdateError when updates are not possible."""
-    exe = exe or installer()
-    if exe is None:
-        raise UpdateError("The rot installer is not on this computer")
+def _receipts(exe: Path) -> list[dict]:
     status = _run(exe, "status", APP, "--json")
     try:
-        receipts = json.loads(status.stdout or "[]") if status.returncode == 0 else []
+        return json.loads(status.stdout or "[]") if status.returncode == 0 else []
     except ValueError:
-        receipts = []
-    if not receipts:
+        return []
+
+
+def check(candidates: list[Path] | None = None) -> dict:
+    """Ask the installer that owns Split for the newest release. Raises UpdateError when it cannot."""
+    candidates = installers() if candidates is None else candidates
+    if not candidates:
+        raise UpdateError("The rot installer is not on this computer")
+    # an older shared installer may not know split yet while a per-user one owns the install
+    owner = next(((exe, found) for exe in candidates if (found := _receipts(exe))), None)
+    if owner is None:
         raise UpdateError("This copy of Split was not installed by the rot installer")
+    exe, receipts = owner
     release = _run(exe, "check", APP, "--json")
     if release.returncode != 0:
         reason = (release.stderr.strip().splitlines() or ["the update check failed"])[-1]
@@ -71,6 +77,7 @@ def check(exe: Path | None = None) -> dict:
         "version": str(data["version"]),
         "notes": data.get("notes") or "",
         "root": receipts[0]["install_root"],
+        "exe": exe,
     }
 
 
@@ -107,15 +114,14 @@ class Updates:
 
     def refresh(self) -> dict:
         try:
-            exe = installer()
-            release = check(exe)
+            release = check()
             state = {
                 "available": newer(release["version"], __version__),
                 "version": release["version"],
                 "notes": release["notes"],
                 "error": None,
             }
-            root = release["root"]
+            root, exe = release["root"], release["exe"]
         except (UpdateError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
             exe, root = None, None
             state = {"available": False, "version": None, "notes": "", "error": str(exc)}
