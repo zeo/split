@@ -27,6 +27,8 @@ const state = {
   tiers: saved.tiers ?? {},
   stems: saved.stems ?? {},
   isolate: saved.isolate ?? {},
+  leadBack: saved.leadBack ?? {},
+  mode: saved.mode ?? "balanced",
   format: saved.format ?? "wav",
   staged: [],
   snapshot: { jobs: [], downloads: {}, opened: { seq: 0 } },
@@ -37,8 +39,8 @@ const state = {
 const mixer = new Mixer({ onEnded: () => renderTransport() });
 
 function persist() {
-  const { task, tiers, stems, isolate, format } = state;
-  localStorage.setItem("split.settings", JSON.stringify({ task, tiers, stems, isolate, format }));
+  const { task, tiers, stems, isolate, leadBack, mode, format } = state;
+  localStorage.setItem("split.settings", JSON.stringify({ task, tiers, stems, isolate, leadBack, mode, format }));
 }
 
 const currentTask = () => state.catalog.tasks.find((t) => t.id === state.task) ?? state.catalog.tasks[0];
@@ -47,7 +49,22 @@ const currentTier = (task = currentTask()) => {
   return task.tiers.find((t) => t.id === id) ?? task.tiers.find((t) => t.id === task.default_tier);
 };
 const isolating = (task = currentTask()) => task.isolatable && Boolean(state.isolate[task.id]);
-const stemChoices = (task = currentTask()) => (isolating(task) ? [...task.stems, "instrumental"] : task.stems);
+const splitting = (task = currentTask()) => task.splittable && Boolean(state.leadBack[task.id]);
+const stemChoices = (task = currentTask()) => {
+  if (splitting(task)) return task.stems.flatMap((s) => (s === "vocals" ? ["lead", "back"] : [s]));
+  return isolating(task) ? [...task.stems, "instrumental"] : task.stems;
+};
+const currentSteps = (task = currentTask()) => {
+  const tier = currentTier(task);
+  return splitting(task) ? tier.split_steps : isolating(task) ? tier.isolated_steps : tier.steps;
+};
+const planModels = (task = currentTask()) => [...new Set(currentSteps(task).flatMap((s) => s.models))];
+const MODES = [
+  { id: "balanced", label: "Balanced", blurb: "Averages the models. Stems add back up to the mix.", note: "averaged sample by sample" },
+  { id: "clear", label: "Clear Cut", blurb: "Keeps what every model agrees on: less bleed between stems, some fine detail lost.", note: "min spectrum, less bleed" },
+  { id: "deep", label: "Deep Extraction", blurb: "Keeps the most any model found: more detail, more bleed between stems.", note: "max spectrum, more detail" },
+];
+const currentMode = () => MODES.find((m) => m.id === state.mode) ?? MODES[0];
 const chosenStems = (task = currentTask()) => {
   const picked = state.stems[task.id];
   const choices = stemChoices(task);
@@ -123,9 +140,18 @@ function renderTier() {
     renderRail();
   });
   $("tier-blurb").textContent = tier.blurb;
+  const ensembles = currentSteps(task).some((s) => s.models.length > 1);
+  $("modes").classList.toggle("hidden", !ensembles);
+  $("mode-blurb").classList.toggle("hidden", !ensembles);
+  radio($("modes"), MODES, currentMode().id, (id) => {
+    state.mode = id;
+    persist();
+    renderRail();
+  });
+  $("mode-blurb").textContent = currentMode().blurb;
   const list = $("tier-models");
   list.replaceChildren();
-  for (const id of tier.models) {
+  for (const id of planModels(task)) {
     const model = state.catalog.models[id];
     const item = document.createElement("li");
     const name = document.createElement("span");
@@ -171,6 +197,8 @@ function renderStems() {
   }
   $("isolate-row").classList.toggle("hidden", !task.isolatable);
   $("isolate").checked = isolating(task);
+  $("lead-back-row").classList.toggle("hidden", !task.splittable);
+  $("lead-back").checked = splitting(task);
 }
 
 function renderFormats() {
@@ -186,10 +214,7 @@ function renderFormats() {
 
 function renderFirstRun() {
   const task = currentTask();
-  const tier = currentTier(task);
-  const ids = new Set(tier.models);
-  if (isolating(task)) ids.add("leap-xe-voc");
-  const missing = [...ids].reduce((sum, id) => sum + (state.catalog.models[id].missing || 0), 0);
+  const missing = planModels(task).reduce((sum, id) => sum + (state.catalog.models[id].missing || 0), 0);
   $("first-run").textContent = missing
     ? `This needs ${megabytes(missing)} of model weights. They download once, on the first run, and every file is checked before it loads.`
     : "Everything runs on this computer. Nothing is uploaded.";
@@ -224,7 +249,7 @@ function patchNode(title, note, className = "") {
 function renderRoute() {
   const task = currentTask();
   const tier = currentTier(task);
-  const steps = isolating(task) ? tier.isolated_steps : tier.steps;
+  const steps = currentSteps(task);
   $("intake-title").textContent = task.label;
   $("intake-blurb").textContent = task.blurb;
   const patch = $("route");
@@ -235,7 +260,7 @@ function renderRoute() {
     if (step.input !== "mix") patch.append(wire(), stemTap(step.input));
     const models = step.models.map((id) => state.catalog.models[id]);
     const title = models.length > 1 ? models.map((m) => m.label).join(" + ") : models[0].label;
-    const note = models.length > 1 ? "averaged sample by sample" : models[0].author;
+    const note = models.length > 1 ? currentMode().note : models[0].author;
     patch.append(wire(), patchNode(title, note));
     if (index < steps.length - 1) side.push(...step.outputs.filter((o) => finals.includes(o)));
   });
@@ -253,12 +278,11 @@ function renderRoute() {
 }
 
 function renderSpec(task, tier) {
-  const models = [...new Set(tier.models)].map((id) => state.catalog.models[id]);
-  if (isolating(task)) models.unshift(state.catalog.models["leap-xe-voc"]);
+  const models = planModels(task).map((id) => state.catalog.models[id]);
   const missing = models.reduce((sum, m) => sum + (m.missing || 0), 0);
   const size = models.reduce((sum, m) => sum + m.size, 0);
   // quote the task's lead stem, the number the task is judged by, from the strongest model that publishes it
-  const lead = task.stems.find((stem) => models.some((m) => m.scores[stem] != null));
+  const lead = stemChoices(task).find((stem) => models.some((m) => m.scores[stem] != null));
   const best = lead ? [lead, Math.max(...models.map((m) => m.scores[lead] ?? -Infinity))] : null;
   const licenses = [...new Set(models.map((m) => (m.license === "Not stated by the author" ? "unstated" : m.license === "Unknown" ? "unknown" : m.license)))];
   const cells = [
@@ -302,6 +326,12 @@ $("isolate").addEventListener("change", (event) => {
   renderStems();
   renderFirstRun();
   renderRoute();
+});
+
+$("lead-back").addEventListener("change", (event) => {
+  state.leadBack[state.task] = event.target.checked;
+  persist();
+  renderRail();
 });
 
 /* staging */
@@ -360,7 +390,7 @@ function renderStaged() {
 async function separate() {
   if (!state.staged.length) return;
   const task = currentTask();
-  const settings = { task: task.id, tier: currentTier(task).id, isolate: isolating(task), stems: chosenStems(task), format: state.format };
+  const settings = { task: task.id, tier: currentTier(task).id, isolate: isolating(task), lead_back: splitting(task), mode: state.mode, stems: chosenStems(task), format: state.format };
   const paths = state.staged.filter((s) => s.path).map((s) => s.path);
   const stems = state.staged.filter((s) => s.stemOf).map((s) => s.stemOf);
   const files = state.staged.filter((s) => s.file).map((s) => s.file);
@@ -408,7 +438,8 @@ function jobActions(job) {
 function taskLine(job) {
   const task = state.catalog.tasks.find((t) => t.id === job.task);
   const tier = task?.tiers.find((t) => t.id === job.tier);
-  const parts = [task?.label ?? job.task, task && task.tiers.length > 1 ? tier?.label : null, job.format.toUpperCase()];
+  const mode = job.mode && job.mode !== "balanced" ? MODES.find((m) => m.id === job.mode)?.label : null;
+  const parts = [task?.label ?? job.task, job.lead_back ? "Lead/Back" : null, task && task.tiers.length > 1 ? tier?.label : null, mode, job.format.toUpperCase()];
   return parts.filter(Boolean).join(" · ");
 }
 
@@ -530,7 +561,7 @@ async function copyDetails() {
   const device = state.snapshot.device;
   const lines = [
     `Split ${$("version").textContent}`,
-    `${taskLine(job)} · ${job.tier}${job.isolate ? " · isolated" : ""}`,
+    `${taskLine(job)} · ${job.tier}${job.isolate ? " · isolated" : ""}${job.lead_back ? " · lead/back" : ""} · ${job.mode ?? "balanced"}`,
     `device: ${device ? `${device.name} (${device.kind})` : "unknown"}`,
     `error (${job.error_kind}): ${job.error}`,
     log && `\n${log.trim()}`,

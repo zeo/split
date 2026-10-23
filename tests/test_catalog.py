@@ -44,11 +44,12 @@ def test_catalog_models_match_audio_separator_names():
 
 @pytest.mark.parametrize("task", list(catalog.TASKS.values()), ids=lambda t: t.id)
 def test_every_tier_produces_exactly_the_task_stems(task):
+    options = [(False, False), (task.isolatable, False), (False, task.splittable)]
     for tier in task.tiers:
-        for isolate in {False, task.isolatable}:
+        for isolate, lead_back in set(options):
             produced: set[str] = set()
             available = {"mix"}
-            for step in catalog.plan(task.id, tier.id, isolate):
+            for step in catalog.plan(task.id, tier.id, isolate, lead_back):
                 assert step.input in available, (tier.id, step.input)
                 for model_id in step.models:
                     model = catalog.MODELS[model_id]
@@ -58,7 +59,33 @@ def test_every_tier_produces_exactly_the_task_stems(task):
                     stems = [set(catalog.MODELS[m].stems.values()) for m in step.models]
                     assert all(s == stems[0] for s in stems), "ensembled models must agree on stems"
                 produced |= set(step.outputs.values())
-            assert produced == set(task.stems_for(isolate)), (tier.id, isolate)
+            assert produced == set(task.stems_for(isolate, lead_back)), (tier.id, isolate, lead_back)
+
+
+def test_lead_back_splits_the_isolated_vocal():
+    task = catalog.TASKS["vocals"]
+    assert task.stems_for(False, True) == ("lead", "back", "instrumental")
+    assert catalog.TASKS["karaoke"].stems_for(False, True) == ("lead", "backing")
+    best = catalog.plan("vocals", "best", lead_back=True)
+    assert best[-1].input == "vocals" and best[-1].models == ("karaoke-anvuew",)
+    assert catalog.plan("vocals", "ultra", lead_back=True)[-1].models == ("karaoke-anvuew", "karaoke-frazer")
+
+
+@pytest.mark.parametrize("mode", list(catalog.MODES))
+def test_modes_only_change_ensembled_steps(mode):
+    for task in catalog.TASKS.values():
+        for tier in task.tiers:
+            for step in catalog.plan(task.id, tier.id, lead_back=task.splittable, mode=mode):
+                expected = catalog.MODES[mode] if len(step.models) > 1 else "avg_wave"
+                assert step.algorithm == expected, (task.id, tier.id)
+
+
+def test_mild_denoise_keeps_half_the_noise():
+    tiers = catalog.TASKS["denoise"].tiers
+    assert [t.label for t in tiers] == ["Mild", "Normal", "Aggressive"]
+    assert catalog.TASKS["denoise"].default_tier == "best"
+    (step,) = catalog.plan("denoise", "mild")
+    assert step.keep == 0.5 and list(step.outputs) == ["clean", "noise"]
 
 
 def test_default_tier_exists_and_public_shape():

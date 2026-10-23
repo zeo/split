@@ -215,6 +215,21 @@ def work_bytes(recipe: list[Step], wanted: list[str], duration: float, rate: int
     return int(duration * (floats + encoded)) + SPARE
 
 
+def keep_residue(step: Step, merged: dict[str, Path], out: Path) -> dict[str, Path]:
+    import soundfile as sf
+
+    target, residue = list(step.outputs)[:2]
+    out.mkdir(parents=True, exist_ok=True)
+    clean, rate = sf.read(merged[target], dtype="float32", always_2d=True)
+    noise, _ = sf.read(merged[residue], dtype="float32", always_2d=True)
+    frames = min(len(clean), len(noise))
+    clean, noise = clean[:frames], noise[:frames]
+    kept = {target: out / f"{target}.wav", residue: out / f"{residue}.wav"}
+    sf.write(kept[target], clean + step.keep * noise, rate, subtype="FLOAT")
+    sf.write(kept[residue], (1 - step.keep) * noise, rate, subtype="FLOAT")
+    return {**merged, **kept}
+
+
 class Runner:
     def __init__(self) -> None:
         self.device = describe_device()
@@ -296,7 +311,13 @@ class Runner:
         work = job_dir / "work"
         shutil.rmtree(work, ignore_errors=True)
         work.mkdir(parents=True)
-        recipe = plan(request["task"], request["tier"], request.get("isolate", False))
+        recipe = plan(
+            request["task"],
+            request["tier"],
+            request.get("isolate", False),
+            request.get("lead_back", False),
+            request.get("mode", "balanced"),
+        )
         wanted = request["stems"]
         fmt = request["format"]
         self.notes = []
@@ -350,6 +371,8 @@ class Runner:
                 )
                 done += 1
             merged = self._combine(step, results, work / f"step{step_index}" / "combined")
+            if step.keep:
+                merged = keep_residue(step, merged, work / f"step{step_index}" / "kept")
             available.update(merged)
             for stem, final in step.outputs.items():
                 finals.setdefault(final, []).append(merged[stem])

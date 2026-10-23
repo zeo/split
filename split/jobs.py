@@ -154,6 +154,8 @@ class Jobs:
             "task": spec["task"],
             "tier": spec["tier"],
             "isolate": spec.get("isolate", False),
+            "lead_back": spec.get("lead_back", False),
+            "mode": spec.get("mode", "balanced"),
             "stems": list(spec["stems"]),
             "format": spec["format"],
             "status": "queued",
@@ -428,7 +430,13 @@ class Jobs:
 
     def prefetch(self, record: dict) -> None:
         """Fetch the weights the next job needs while the current one keeps the gpu busy."""
-        steps = catalog.plan(record["task"], record["tier"], record.get("isolate", False))
+        steps = catalog.plan(
+            record["task"],
+            record["tier"],
+            record.get("isolate", False),
+            record.get("lead_back", False),
+            record.get("mode", "balanced"),
+        )
         for model_id in dict.fromkeys(m for step in steps for m in step.models):
             model = catalog.MODELS[model_id]
             with self.lock:

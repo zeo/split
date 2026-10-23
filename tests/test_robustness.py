@@ -50,6 +50,24 @@ def test_job_disk_estimate_grows_with_models_and_length():
     assert engine.work_bytes(ultra, stems, 60, 44100, 2) > short
 
 
+def test_mild_blend_still_sums_to_the_input(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    rng = np.random.default_rng(0)
+    clean, noise = rng.standard_normal((2, 4800, 2)).astype("float32") * 0.1
+    sf.write(tmp_path / "clean.wav", clean, 48000, subtype="FLOAT")
+    sf.write(tmp_path / "noise.wav", noise, 48000, subtype="FLOAT")
+    (step,) = catalog.plan("denoise", "mild")
+    merged = engine.keep_residue(
+        step, {"clean": tmp_path / "clean.wav", "noise": tmp_path / "noise.wav"}, tmp_path / "kept"
+    )
+    kept, _ = sf.read(merged["clean"], dtype="float32")
+    rest, _ = sf.read(merged["noise"], dtype="float32")
+    assert np.allclose(kept, clean + 0.5 * noise, atol=1e-6)
+    assert np.allclose(kept + rest, clean + noise, atol=1e-6)
+
+
 def test_errors_are_classified_for_people():
     assert engine.classify_error(OSError(errno.ENOSPC, "No space left on device"))[0] == "disk"
     assert engine.classify_error(SystemExit(1))[0] == "model"

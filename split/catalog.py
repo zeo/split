@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 HF = "https://huggingface.co"
 
@@ -487,6 +487,8 @@ class Step:
     outputs: dict[str, str]
     input: str = "mix"
     algorithm: str = "avg_wave"
+    # share of the second output folded back into the first, so a lighter touch still sums to the input
+    keep: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -506,6 +508,7 @@ class Task:
     stems: tuple[str, ...]
     tiers: tuple[Tier, ...]
     isolatable: bool = False
+    splittable: bool = False
 
     @property
     def default_tier(self) -> str:
@@ -517,7 +520,11 @@ class Task:
                 return tier
         raise ValueError(f"{self.label} has no {tier_id!r} tier")
 
-    def stems_for(self, isolate: bool) -> tuple[str, ...]:
+    def stems_for(self, isolate: bool, lead_back: bool = False) -> tuple[str, ...]:
+        if lead_back and self.splittable:
+            return tuple(
+                s for stem in self.stems for s in (("lead", "back") if stem == "vocals" else (stem,))
+            )
         return (*self.stems, "instrumental") if isolate and self.isolatable else self.stems
 
     def public(self) -> dict:
@@ -528,6 +535,7 @@ class Task:
             "group": self.group,
             "stems": list(self.stems),
             "isolatable": self.isolatable,
+            "splittable": self.splittable,
             "default_tier": self.default_tier,
             "tiers": [
                 {
@@ -537,6 +545,7 @@ class Task:
                     "models": list(dict.fromkeys(m for step in t.steps for m in step.models)),
                     "steps": [_public_step(step) for step in plan(self.id, t.id)],
                     "isolated_steps": [_public_step(step) for step in plan(self.id, t.id, True)],
+                    "split_steps": [_public_step(step) for step in plan(self.id, t.id, lead_back=True)],
                 }
                 for t in self.tiers
             ],
@@ -596,6 +605,7 @@ TASKS: dict[str, Task] = {
                     (Step(("leap-xe-voc", "anvuew-ft1", "deux"), PAIR),),
                 ),
             ),
+            splittable=True,
         ),
         Task(
             "instrumental",
@@ -688,8 +698,14 @@ TASKS: dict[str, Task] = {
             "clean",
             ("clean", "noise"),
             (
+                Tier(
+                    "mild",
+                    "Mild",
+                    "aufr33 denoise with half the noise left in",
+                    (Step(("denoise",), {"clean": "clean", "noise": "noise"}, keep=0.5),),
+                ),
                 Tier("best", "Normal", "aufr33 denoise", (_one("denoise"),)),
-                Tier("strong", "Strong", "aufr33 denoise, aggressive", (_one("denoise-strong"),)),
+                Tier("strong", "Aggressive", "aufr33 denoise, aggressive", (_one("denoise-strong"),)),
             ),
             isolatable=True,
         ),
@@ -705,14 +721,23 @@ TASKS: dict[str, Task] = {
 }
 
 ISOLATE = Step(("leap-xe-voc",), {"instrumental": "instrumental"})
+MODES = {"balanced": "avg_wave", "clear": "uvr_min_spec", "deep": "uvr_max_spec"}
 
 
-def plan(task_id: str, tier_id: str, isolate: bool = False) -> tuple[Step, ...]:
+def plan(
+    task_id: str, tier_id: str, isolate: bool = False, lead_back: bool = False, mode: str = "balanced"
+) -> tuple[Step, ...]:
     task = TASKS[task_id]
     steps = task.tier(tier_id).steps
     if isolate and task.isolatable:
-        steps = (ISOLATE, *(Step(s.models, s.outputs, "vocals", s.algorithm) for s in steps))
-    return steps
+        steps = (ISOLATE, *(replace(s, input="vocals") for s in steps))
+    if lead_back and task.splittable:
+        karaoke = ("karaoke-anvuew", "karaoke-frazer") if tier_id == "ultra" else ("karaoke-anvuew",)
+        steps = (
+            *(replace(s, outputs={k: v for k, v in s.outputs.items() if v != "vocals"}) for s in steps),
+            Step(karaoke, {"lead": "lead", "backing": "back"}, "vocals"),
+        )
+    return tuple(replace(s, algorithm=MODES[mode]) if len(s.models) > 1 else s for s in steps)
 
 
 def public() -> dict:

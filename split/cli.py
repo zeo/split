@@ -32,6 +32,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("-s", "--stems", nargs="+", help="only write these stems")
     run.add_argument("-f", "--format", default="wav", choices=media.FORMATS)
     run.add_argument("--isolate", action="store_true", help="cleanup tasks: isolate vocals first")
+    run.add_argument("--lead-back", action="store_true", help="vocals: split lead and back vocals")
+    run.add_argument(
+        "--mode",
+        default="balanced",
+        choices=list(catalog.MODES),
+        help="how multi-model tiers combine: clear for less bleed, deep for more detail",
+    )
     run.add_argument("--cpu", action="store_true", help="run on the cpu even if a gpu is present")
     run.add_argument("--json", action="store_true", help="print progress as json lines")
 
@@ -59,6 +66,8 @@ def _list(as_json: bool) -> int:
     for task in catalog.TASKS.values():
         print(f"{task.id:13} {task.label}: {task.blurb}")
         print(f"{'':13} stems: {', '.join(task.stems)}")
+        if task.splittable:
+            print(f"{'':13} --lead-back: {', '.join(task.stems_for(False, True))}")
         for tier in task.tiers:
             mark = "*" if tier.id == task.default_tier else " "
             print(f"{'':13} {mark} {tier.id:7} {tier.blurb}")
@@ -96,7 +105,7 @@ def _separate(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2
-    allowed = task.stems_for(args.isolate)
+    allowed = task.stems_for(args.isolate, args.lead_back)
     if args.stems and not set(args.stems) <= set(allowed):
         print(f"{task.label} stems are: {', '.join(allowed)}", file=sys.stderr)
         return 2
@@ -135,6 +144,8 @@ def _separate(args: argparse.Namespace) -> int:
                 "task": task.id,
                 "tier": tier,
                 "isolate": args.isolate,
+                "lead_back": args.lead_back and task.splittable,
+                "mode": args.mode,
                 "stems": stems,
                 "format": args.format,
                 "original": False,

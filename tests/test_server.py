@@ -58,6 +58,8 @@ def test_catalog_lists_tasks_models_and_download_state(client):
         ({"task": "vocals", "tier": "legendary"}, "no 'legendary' tier"),
         ({"task": "vocals", "stems": ["drums"]}, "Pick stems"),
         ({"task": "vocals", "format": "ogg"}, "Format must be"),
+        ({"task": "vocals", "mode": "loud"}, "Mode must be"),
+        ({"task": "vocals", "lead_back": True, "stems": ["vocals"]}, "Pick stems"),
         ({"task": "vocals", "paths": []}, "Add at least one file"),
         ({"task": "vocals", "paths": ["Z:/definitely/missing.wav"]}, "does not exist"),
     ],
@@ -134,6 +136,23 @@ def test_isolate_adds_instrumental_only_for_cleanup_tasks(client, tmp_path):
         client, "POST", "/api/jobs", json={"paths": [str(song)], "task": "band4", "isolate": True}
     ).json()
     assert band["jobs"][0]["isolate"] is False
+
+
+def test_lead_back_only_splits_the_vocals_task(client, tmp_path):
+    song = tmp_path / "a.wav"
+    song.write_bytes(b"x")
+    vocals = authed(
+        client,
+        "POST",
+        "/api/jobs",
+        json={"paths": [str(song)], "task": "vocals", "lead_back": True, "mode": "clear"},
+    ).json()["jobs"][0]
+    assert vocals["stems"] == ["lead", "back", "instrumental"]
+    assert vocals["lead_back"] is True and vocals["mode"] == "clear"
+    karaoke = authed(
+        client, "POST", "/api/jobs", json={"paths": [str(song)], "task": "karaoke", "lead_back": True}
+    ).json()["jobs"][0]
+    assert karaoke["lead_back"] is False and karaoke["stems"] == ["lead", "backing"]
 
 
 def test_focus_offers_files_to_the_page(client, tmp_path):

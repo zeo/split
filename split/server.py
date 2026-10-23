@@ -45,7 +45,11 @@ def _validate(spec: dict) -> dict:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
     isolate = bool(spec.get("isolate")) and task.isolatable
-    allowed = task.stems_for(isolate)
+    lead_back = bool(spec.get("lead_back")) and task.splittable
+    mode = spec.get("mode") or "balanced"
+    if mode not in catalog.MODES:
+        raise HTTPException(400, f"Mode must be one of {', '.join(catalog.MODES)}")
+    allowed = task.stems_for(isolate, lead_back)
     stems = spec.get("stems") or list(allowed)
     if isinstance(stems, str):
         stems = [s for s in stems.split(",") if s]
@@ -59,6 +63,8 @@ def _validate(spec: dict) -> dict:
         "task": task.id,
         "tier": tier,
         "isolate": isolate,
+        "lead_back": lead_back,
+        "mode": mode,
         "stems": [s for s in allowed if s in stems],
         "format": fmt,
     }
@@ -193,8 +199,8 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
         if request.headers.get("content-type", "").startswith("multipart/form-data"):
             form = await request.form()
             spec = _validate(
-                {key: form.get(key) for key in ("task", "tier", "stems", "format")}
-                | {"isolate": form.get("isolate") in ("1", "true", "on")}
+                {key: form.get(key) for key in ("task", "tier", "stems", "format", "mode")}
+                | {key: form.get(key) in ("1", "true", "on") for key in ("isolate", "lead_back")}
             )
             uploads = [item for item in form.getlist("files") if hasattr(item, "filename")]
             if not uploads:

@@ -72,3 +72,19 @@ def test_cli_parser_knows_every_task():
         assert parser.parse_args(["separate", "x.wav", "-t", task]).task == task
     with pytest.raises(SystemExit):
         parser.parse_args(["separate", "x.wav", "-t", "orchestra"])
+
+
+def test_cli_parses_lead_back_and_mode():
+    parser = cli.build_parser()
+    args = parser.parse_args(["separate", "x.wav", "--lead-back", "--mode", "deep"])
+    assert args.lead_back and args.mode == "deep"
+    assert parser.parse_args(["separate", "x.wav"]).mode == "balanced"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["separate", "x.wav", "--mode", "loud"])
+
+
+def test_cli_lead_back_widens_the_vocal_stems(tmp_path, capsys):
+    song = tmp_path / "a.wav"
+    song.write_bytes(b"x")
+    assert cli.main(["separate", str(song), "--lead-back", "--stems", "vocals"]) == 2
+    assert "lead, back, instrumental" in capsys.readouterr().err

@@ -22,21 +22,21 @@ Use a driver from the R580 branch or newer. Without a supported GPU split runs o
 
 | Task | Stems | Best model |
 |---|---|---|
-| Vocals | vocals, instrumental | unwa Leap Xe |
+| Vocals | vocals, instrumental, or lead, back, instrumental | unwa Leap Xe, plus anvuew karaoke for lead and back |
 | Instrumental | instrumental, vocals | unwa Leap instrumental |
 | Karaoke | lead, backing | anvuew BS-RoFormer karaoke |
 | 4 stems | vocals, drums, bass, other | BS-RoFormer SW |
 | 6 stems | vocals, drums, bass, guitar, piano, other | BS-RoFormer SW |
 | Drum kit | kick, snare, toms, hihat, cymbals | SW, then DrumSep 5-stem |
 | De-reverb | dry, reverb | anvuew BS de-reverb |
-| Denoise | clean, noise | aufr33 denoise |
+| Denoise | clean, noise, at Mild, Normal or Aggressive | aufr33 denoise |
 | Crowd | clean, crowd | aufr33 and viperx crowd |
 
-Vocals, Instrumental and Karaoke have an Ultra tier that averages two or three models. Vocals, Instrumental and 4 stems have a Fast tier. The cleanup tasks can isolate the vocal first, so de-reverb treats the voice and not the whole mix.
+Vocals, Instrumental and Karaoke have an Ultra tier that averages two or three models. On those tiers Clear Cut keeps only what the models agree on, for less bleed between stems; Deep Extraction keeps what any of them found, for more detail. Vocals, Instrumental and 4 stems have a Fast tier. The cleanup tasks can isolate the vocal first, so de-reverb treats the voice and not the whole mix.
 
 The models are the top downloadable entries on the [MVSEP leaderboards](https://mvsep.com/quality_checker/multisong_leaderboard) as of October 2026. On an RTX 4070 Ti a four-and-a-half-minute song takes about two minutes on Vocals.
 
-Stems keep the source's sample rate and channel count and come out as 24-bit WAV or FLAC, or 320k MP3. Vocals with instrumental, and the cleanup pairs, add back up to the original mix.
+Stems keep the source's sample rate and channel count and come out as 24-bit WAV or FLAC, or 320k MP3. Vocals with instrumental, and the cleanup pairs, add back up to the original mix, except under Clear Cut and Deep Extraction.
 
 ## Keys
 
@@ -47,6 +47,7 @@ Stems keep the source's sample rate and channel count and come out as 24-bit WAV
 ```
 split separate song.flac --task band6 --format flac --output stems
 split separate ~/Music/album --task karaoke
+split separate song.flac --lead-back --tier ultra --mode clear
 split models
 ```
 

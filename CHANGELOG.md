@@ -4,6 +4,11 @@ dates are release-tag dates.
 
 ## [Unreleased]
 
+### features
+- Vocals can split the voice into lead and back vocals, so a song comes out as lead, back and instrumental; the karaoke model runs on the isolated vocal
+- denoise strength is Mild, Normal or Aggressive; Mild leaves half the noise in
+- tiers that average several models can run as Balanced, Clear Cut (min spectrum, less bleed) or Deep Extraction (max spectrum, more detail); `--lead-back` and `--mode` do the same from the command line
+
 ### fixes
 - mono files are read as mono on Linux, where older ffmpeg builds describe them as "1 channels"
 

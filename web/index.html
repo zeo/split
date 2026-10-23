@@ -42,6 +42,8 @@
       <div class="segmented" id="tiers" role="radiogroup" aria-label="Quality"></div>
       <p class="tier-blurb" id="tier-blurb"></p>
       <ul class="tier-models" id="tier-models"></ul>
+      <div class="segmented stack hidden" id="modes" role="radiogroup" aria-label="Enhanced processing"></div>
+      <p class="tier-blurb hidden" id="mode-blurb"></p>
     </section>
 
     <section class="module">
@@ -51,6 +53,11 @@
         <input type="checkbox" id="isolate">
         <span class="switch" aria-hidden="true"></span>
         <span>Isolate vocals first</span>
+      </label>
+      <label class="toggle hidden" id="lead-back-row">
+        <input type="checkbox" id="lead-back">
+        <span class="switch" aria-hidden="true"></span>
+        <span>Split lead and back vocals</span>
       </label>
     </section>
 
