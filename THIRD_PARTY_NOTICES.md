@@ -17,7 +17,8 @@ None of these files ship with Split. Each one downloads from the host below the 
 | Instrumental | becruily | not stated | https://huggingface.co/becruily/mel-band-roformer-instrumental |
 | Instrumental Fv7z | Gabox | not stated | https://huggingface.co/GaboxR67/MelBandRoformers |
 | Karaoke | anvuew | GPL-3.0 | https://huggingface.co/anvuew/karaoke_bs_roformer |
-| Karaoke | frazer and becruily | not stated | https://huggingface.co/becruily/bs-roformer-karaoke |
+| Karaoke (frazer) | frazer and becruily | not stated | https://huggingface.co/becruily/bs-roformer-karaoke |
+| Karaoke IS | Gabox | not stated | https://huggingface.co/GaboxR67/MelBandRoformers |
 | BS-RoFormer SW | unknown | unknown | https://github.com/nomadkaraoke/python-audio-separator |
 | HT Demucs | Alexandre Défossez | MIT | https://github.com/adefossez/demucs |
 | DrumSep 5-stem | aufr33 and jarredou | not stated | https://huggingface.co/noblebarkrr/mvsepless_resources |

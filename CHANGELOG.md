@@ -4,6 +4,10 @@ dates are release-tag dates.
 
 ## [Unreleased]
 
+### models
+- Instrumental now defaults to Leap Xe, which scores higher than Leap instrumental on MVSEP (18.07 against 17.76 dB) and leaves less voice behind; Leap instrumental stays as the Full tier for a fuller backing track
+- Karaoke Ultra, and Lead/Back on Ultra, add Gabox's Karaoke IS to the average, lifting the lead score from 10.23 to 10.43 dB on MVSEP
+
 ### features
 - Vocals can split the voice into lead and back vocals, so a song comes out as lead, back and instrumental; the karaoke model runs on the isolated vocal
 - denoise strength is Mild, Normal or Aggressive; Mild leaves half the noise in

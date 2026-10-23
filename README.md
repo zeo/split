@@ -23,8 +23,8 @@ Use a driver from the R580 branch or newer. Without a supported GPU split runs o
 | Task | Stems | Best model |
 |---|---|---|
 | Vocals | vocals, instrumental, or lead, back, instrumental | unwa Leap Xe, plus anvuew karaoke for lead and back |
-| Instrumental | instrumental, vocals | unwa Leap instrumental |
-| Karaoke | lead, backing | anvuew BS-RoFormer karaoke |
+| Instrumental | instrumental, vocals | unwa Leap Xe, or Leap instrumental for a fuller mix |
+| Karaoke | lead, backing | anvuew BS-RoFormer karaoke, Ultra adds frazer/becruily and Gabox |
 | 4 stems | vocals, drums, bass, other | BS-RoFormer SW |
 | 6 stems | vocals, drums, bass, guitar, piano, other | BS-RoFormer SW |
 | Drum kit | kick, snare, toms, hihat, cymbals | SW, then DrumSep 5-stem |

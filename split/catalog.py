@@ -117,6 +117,16 @@ _PINS: dict[str, tuple[str, int, str]] = {
         1903,
         "1d3b58b473025183d0d3c91e7a444cb5f1418d9f34e8f46b8d2fb10d2cc8ab34",
     ),
+    "bs_karaoke_gabox_IS.ckpt": (
+        "https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/bsroformers/bs_karaoke_gabox_IS.ckpt",
+        204483448,
+        "db8357825398d4231031ad1ab4aa12a94bcaad8d67e8ce5e4b3c5b48fdee1d4f",
+    ),
+    "karaoke_bs_roformer_gabox.yaml": (
+        "https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/bsroformers/karaoke_bs_roformer.yaml",
+        1999,
+        "ee6ce776404db78dc115179a9f5ca67c06dd379fbd2611890f3637a3caa14b7c",
+    ),
     "BS-Roformer-SW.ckpt": (
         "https://github.com/nomadkaraoke/python-audio-separator/releases/download/model-configs/BS-Roformer-SW.ckpt",
         699412152,
@@ -364,7 +374,7 @@ _MODELS = [
     ),
     Model(
         "karaoke-frazer",
-        "Karaoke",
+        "Karaoke (frazer)",
         "frazer and becruily",
         "roformer",
         _files("bs_roformer_karaoke_frazer_becruily.ckpt", "config_bs_roformer_karaoke_frazer_becruily.yaml"),
@@ -372,6 +382,16 @@ _MODELS = [
         UNSTATED,
         f"{HF}/becruily/bs-roformer-karaoke",
         {"lead": 10.06},
+    ),
+    Model(
+        "karaoke-gabox",
+        "Karaoke IS",
+        "Gabox",
+        "roformer",
+        _files("bs_karaoke_gabox_IS.ckpt", "karaoke_bs_roformer_gabox.yaml"),
+        {"vocals": "lead", "other": "backing"},
+        UNSTATED,
+        f"{HF}/GaboxR67/MelBandRoformers",
     ),
     Model(
         "sw",
@@ -567,6 +587,7 @@ def _one(model: str, outputs: dict[str, str] | None = None, source: str = "mix")
 
 
 PAIR = {"vocals": "vocals", "instrumental": "instrumental"}
+KARAOKE_ULTRA = ("karaoke-anvuew", "karaoke-frazer", "karaoke-gabox")
 BAND4 = {
     "vocals": "vocals",
     "drums": "drums",
@@ -615,7 +636,18 @@ TASKS: dict[str, Task] = {
             ("instrumental", "vocals"),
             (
                 Tier("fast", "Fast", "Resurrection instrumental", (_one("resurrection-inst"),)),
-                Tier("best", "Best", "Leap instrumental: the top instrumental score", (_one("leap-inst"),)),
+                Tier(
+                    "best",
+                    "Best",
+                    "Leap Xe: the top instrumental score and the least voice left behind",
+                    (_one("leap-xe-voc"),),
+                ),
+                Tier(
+                    "full",
+                    "Full",
+                    "Leap instrumental: a fuller backing track that keeps a trace more voice",
+                    (_one("leap-inst"),),
+                ),
                 Tier(
                     "ultra",
                     "Ultra",
@@ -635,8 +667,8 @@ TASKS: dict[str, Task] = {
                 Tier(
                     "ultra",
                     "Ultra",
-                    "anvuew and frazer/becruily karaoke models averaged",
-                    (Step(("karaoke-anvuew", "karaoke-frazer"), {"lead": "lead", "backing": "backing"}),),
+                    "anvuew, frazer/becruily and Gabox karaoke models averaged",
+                    (Step(KARAOKE_ULTRA, {"lead": "lead", "backing": "backing"}),),
                 ),
             ),
         ),
@@ -732,7 +764,7 @@ def plan(
     if isolate and task.isolatable:
         steps = (ISOLATE, *(replace(s, input="vocals") for s in steps))
     if lead_back and task.splittable:
-        karaoke = ("karaoke-anvuew", "karaoke-frazer") if tier_id == "ultra" else ("karaoke-anvuew",)
+        karaoke = KARAOKE_ULTRA if tier_id == "ultra" else ("karaoke-anvuew",)
         steps = (
             *(replace(s, outputs={k: v for k, v in s.outputs.items() if v != "vocals"}) for s in steps),
             Step(karaoke, {"lead": "lead", "backing": "back"}, "vocals"),

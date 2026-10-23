@@ -68,7 +68,10 @@ def test_lead_back_splits_the_isolated_vocal():
     assert catalog.TASKS["karaoke"].stems_for(False, True) == ("lead", "backing")
     best = catalog.plan("vocals", "best", lead_back=True)
     assert best[-1].input == "vocals" and best[-1].models == ("karaoke-anvuew",)
-    assert catalog.plan("vocals", "ultra", lead_back=True)[-1].models == ("karaoke-anvuew", "karaoke-frazer")
+    assert (
+        catalog.plan("vocals", "ultra", lead_back=True)[-1].models
+        == catalog.TASKS["karaoke"].tier("ultra").steps[0].models
+    )
 
 
 @pytest.mark.parametrize("mode", list(catalog.MODES))
