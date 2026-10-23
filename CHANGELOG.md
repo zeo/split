@@ -2,7 +2,7 @@
 
 dates are release-tag dates.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-23
 
 ### models
 - Instrumental now defaults to Leap Xe, which scores higher than Leap instrumental on MVSEP (18.07 against 17.76 dB) and leaves less voice behind; Leap instrumental stays as the Full tier for a fuller backing track
