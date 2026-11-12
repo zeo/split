@@ -126,8 +126,21 @@ def test_upload_job(client):
     job = response.json()["jobs"][0]
     assert job["owns_source"] is True
     assert job["name"] == "take one"
+    assert Path(job["source"]).suffix == ".wav"
     done = wait_for(client.jobs, job["id"])
     assert done["status"] == "done"
+
+
+def test_upload_keeps_only_a_plain_extension(client):
+    response = authed(
+        client,
+        "POST",
+        "/api/jobs",
+        data={"task": "vocals"},
+        files=[("files", ("take.wav:hidden", b"RIFF", "audio/wav"))],
+    )
+    source = Path(response.json()["jobs"][0]["source"])
+    assert source.suffix == ""
 
 
 def test_isolate_adds_instrumental_only_for_cleanup_tasks(client, tmp_path):

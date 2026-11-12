@@ -28,6 +28,7 @@ from .updates import UpdateError, Updates
 TOKEN_HEADER = "x-split-token"
 TOKEN_SLOT = '<meta name="split-token" content="">'
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+_SUFFIX = re.compile(r"\.[a-z0-9]{1,8}")
 
 
 def safe_name(name: str) -> str:
@@ -68,6 +69,11 @@ def _validate(spec: dict) -> dict:
         "stems": [s for s in allowed if s in stems],
         "format": fmt,
     }
+
+
+def _save_upload(upload, dest: Path) -> None:
+    with dest.open("wb") as fh:
+        shutil.copyfileobj(upload, fh, 1 << 20)
 
 
 async def _body(request: Request) -> dict:
@@ -208,10 +214,10 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
             inbox = store().root / "uploads"
             inbox.mkdir(exist_ok=True)
             for upload in uploads:
-                dest = inbox / f"{uuid.uuid4().hex}{Path(upload.filename or '').suffix.lower()}"
-                with dest.open("wb") as fh:
-                    while chunk := await upload.read(1 << 20):
-                        fh.write(chunk)
+                # only a plain extension survives, so a crafted name cannot reach an ntfs stream or a device
+                suffix = Path(upload.filename or "").suffix.lower()
+                dest = inbox / f"{uuid.uuid4().hex}{suffix if _SUFFIX.fullmatch(suffix) else ''}"
+                await asyncio.to_thread(_save_upload, upload.file, dest)
                 created.append(
                     store().submit(
                         {
@@ -223,7 +229,10 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
                     )
                 )
             return {"jobs": created}
-        body = await _body(request)
+        return await asyncio.to_thread(submit_paths, await _body(request))
+
+    def submit_paths(body: dict) -> dict:
+        created = []
         spec = _validate(body)
         sources = scan(body.get("paths") or [])
         stems = [stem_source(item) for item in body.get("stems_of") or []]
@@ -249,7 +258,8 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
 
     @app.post("/api/scan", dependencies=[Depends(guard)])
     async def scan_paths(request: Request) -> dict:
-        return {"paths": [str(p) for p in scan((await _body(request)).get("paths") or [])]}
+        found = await asyncio.to_thread(scan, (await _body(request)).get("paths") or [])
+        return {"paths": [str(p) for p in found]}
 
     @app.delete("/api/jobs", dependencies=[Depends(guard)])
     def clear_jobs() -> dict:
@@ -338,8 +348,10 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
 
     @app.post("/api/jobs/{job_id}/export", dependencies=[Depends(guard)])
     async def export_job(job_id: str, request: Request) -> dict:
-        job = record(job_id)
         folder = Path((await _body(request)).get("folder") or "")
+        return await asyncio.to_thread(export_to, record(job_id), folder)
+
+    def export_to(job: dict, folder: Path) -> dict:
         if job["status"] != "done":
             raise HTTPException(409, "Stems are not ready")
         if not folder.is_dir():
@@ -347,7 +359,7 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
         written = []
         targets = paths.free_stem_names(folder, job["name"], list(job["outputs"]), job["format"])
         for stem, name in job["outputs"].items():
-            shutil.copyfile(store().job_dir(job_id) / name, targets[stem])
+            shutil.copyfile(store().job_dir(job["id"]) / name, targets[stem])
             written.append(str(targets[stem]))
         return {"files": written}
 
@@ -359,21 +371,16 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
         _reveal(folder / first if first else folder)
         return {"revealed": str(folder)}
 
-    @app.post("/api/reveal", dependencies=[Depends(guard)])
-    async def reveal(request: Request) -> dict:
-        target = Path((await _body(request)).get("path") or "")
-        if not target.exists():
-            raise HTTPException(404, "Nothing at that path")
-        _reveal(target)
-        return {"revealed": str(target)}
-
     @app.post("/api/focus", dependencies=[Depends(guard)])
     async def focus(request: Request) -> dict:
-        files = [p for p in (await _body(request)).get("paths") or [] if Path(p).exists()]
+        await asyncio.to_thread(focus_with, (await _body(request)).get("paths") or [])
+        return {"focused": True}
+
+    def focus_with(paths: list[str]) -> None:
+        files = [p for p in paths if Path(p).exists()]
         app.state.focus()
         if files:
             app.state.open_files(files)
-        return {"focused": True}
 
     @app.delete("/api/models/unused", dependencies=[Depends(guard)])
     def delete_unused() -> dict:
