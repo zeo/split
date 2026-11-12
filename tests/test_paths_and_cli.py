@@ -62,6 +62,7 @@ def test_cli_lists_models(capsys):
     assert cli.main(["models"]) == 0
     out = capsys.readouterr().out
     assert "band6" in out and "BS-RoFormer SW" in out
+    assert "Aggressive" in out
 
 
 def test_cli_rejects_unknown_stems(tmp_path, capsys):
@@ -80,6 +81,16 @@ def test_cli_rejects_unknown_tier(tmp_path):
     song = tmp_path / "a.wav"
     song.write_bytes(b"x")
     assert cli.main(["separate", str(song), "--task", "band6", "--tier", "fast"]) == 2
+
+
+def test_cli_takes_tier_labels_from_the_app(tmp_path, monkeypatch, capsys):
+    song = tmp_path / "a.wav"
+    song.write_bytes(b"x")
+    monkeypatch.setattr(cli.media, "collect", lambda inputs: [])
+    assert cli.main(["separate", str(song), "--task", "denoise", "--tier", "Aggressive"]) == 2
+    assert "no audio" in capsys.readouterr().err
+    assert cli.main(["separate", str(song), "--task", "denoise", "--tier", "loud"]) == 2
+    assert "Denoise tiers are: mild, best, strong" in capsys.readouterr().err
 
 
 def test_cli_keeps_going_when_a_model_exits(tmp_path, monkeypatch, capsys):

@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- `split separate --tier` also takes the labels the app shows, in any case, such as `--tier Aggressive` for denoise, and `split models` lists them
 - a stopped model download can be removed under Models, freeing the partial file it kept for resuming
 - two quick Zip clicks no longer collide while the archive is built, and a model that fails to load from the command line fails that song instead of ending the run
 - jobs that run on the shorter chunks a GPU memory retry left behind now say so, not only the job that ran out of memory, and the progress line switches phase as soon as the job does

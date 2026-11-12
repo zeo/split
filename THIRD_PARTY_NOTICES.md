@@ -4,7 +4,7 @@ Split's own code is dual-licensed under MIT or Apache-2.0. The Windows build als
 
 ## Model weights
 
-None of these files ship with Split. Each one downloads from the host below the first time a task needs it, and its SHA-256 is checked against the value pinned in `split/catalog.py`. The authors' terms apply to the weights and arguably to what you make with them. Where no license is stated, assume personal, non-commercial use.
+None of these files ship with Split. Each one downloads the first time a task needs it, from the URL pinned in `split/catalog.py`, which may be a mirror rather than the source listed below. Its SHA-256 is checked against the value pinned in the same file. The authors' terms apply to the weights and arguably to what you make with them. Where no license is stated, assume personal, non-commercial use.
 
 | Model | Author | License | Source |
 |---|---|---|---|

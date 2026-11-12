@@ -70,7 +70,7 @@ def _list(as_json: bool) -> int:
             print(f"{'':13} --lead-back: {', '.join(task.stems_for(False, True))}")
         for tier in task.tiers:
             mark = "*" if tier.id == task.default_tier else " "
-            print(f"{'':13} {mark} {tier.id:7} {tier.blurb}")
+            print(f"{'':13} {mark} {tier.id:7} {tier.label:11} {tier.blurb}")
     print("\nmodels")
     for model in catalog.MODELS.values():
         state = "ready" if status[model.id]["present"] else _human(status[model.id]["missing"])
@@ -99,12 +99,13 @@ def _download(ids: list[str]) -> int:
 
 def _separate(args: argparse.Namespace) -> int:
     task = catalog.TASKS[args.task]
-    tier = args.tier or task.default_tier
-    try:
-        task.tier(tier)
-    except ValueError as exc:
-        print(exc, file=sys.stderr)
+    # the app shows tier labels, so "Aggressive" works as well as "strong"; an id wins a clash
+    wanted = (args.tier or task.default_tier).lower()
+    named = {t.label.lower(): t.id for t in task.tiers} | {t.id: t.id for t in task.tiers}
+    if wanted not in named:
+        print(f"{task.label} tiers are: {', '.join(t.id for t in task.tiers)}", file=sys.stderr)
         return 2
+    tier = named[wanted]
     allowed = task.stems_for(args.isolate, args.lead_back)
     if args.stems and not set(args.stems) <= set(allowed):
         print(f"{task.label} stems are: {', '.join(allowed)}", file=sys.stderr)
