@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### features
+- the installed app now carries `split-cli.exe` beside `split.exe`, the same commands as `split` from source; `separate` will not start while the app has songs queued or running
 - Mixdown, beside Zip in a session, saves one file of the stems at their current fader, mute and solo settings, in the job's format; MP3 jobs mix from their lossless copies
 - separating a stem from an MP3 job again now starts from a 24-bit FLAC copy kept beside the MP3, so the second job does not inherit MP3 artifacts
 - Export all finished, beside Clear finished in the queue, saves every finished job's stems to one folder; a name that is already taken gets a number, such as `Song (2) - vocals.wav`

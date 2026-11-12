@@ -21,14 +21,10 @@ def _free_port() -> int:
         return probe.getsockname()[1]
 
 
-def _instance_file() -> Path:
-    return paths.data_root() / "instance.json"
-
-
 def _hand_off(files: list[str]) -> bool:
     """Ask an already running Split to come forward and take these files. True if it answered."""
     try:
-        info = json.loads(_instance_file().read_text())
+        info = json.loads(paths.instance_file().read_text())
         request = urllib.request.Request(
             f"http://127.0.0.1:{info['port']}/api/focus",
             data=json.dumps({"paths": files}).encode(),
@@ -280,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     if not server.started:
         return 1
 
-    instance = _instance_file()
+    instance = paths.instance_file()
     instance.write_text(json.dumps({"pid": os.getpid(), "port": port, "token": app.state.token}))
 
     bridge = Bridge()

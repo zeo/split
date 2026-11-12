@@ -37,6 +37,11 @@ def data_root() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "split"
 
 
+def instance_file() -> Path:
+    """Where the open desktop app leaves its port and token."""
+    return data_root() / "instance.json"
+
+
 def models_dir() -> Path:
     return _ensure(data_root() / "models")
 

@@ -53,6 +53,8 @@ split models
 
 `separate` takes files or folders, video included. `--json` prints progress for scripts.
 
+The installed app carries the same commands as `split-cli.exe`, beside `split.exe` in `%LOCALAPPDATA%\Programs\split`. Add that folder to your PATH to run `split-cli separate song.flac` from any terminal. `separate` will not start while the app has songs queued or running, and exits with code 2 instead.
+
 ## Privacy
 
 Your audio stays on your machine. split only goes online to download models (GitHub, Hugging Face, Meta) and to check for updates. No telemetry, no account.

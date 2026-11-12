@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 
 from . import __version__, catalog, media, paths
@@ -97,6 +98,18 @@ def _download(ids: list[str]) -> int:
     return 0
 
 
+def _app_busy() -> bool:
+    """True while the desktop app has a job queued or running, which would share the gpu with this run."""
+    from .jobs import ACTIVE
+
+    try:
+        info = json.loads(paths.instance_file().read_text())
+        with urllib.request.urlopen(f"http://127.0.0.1:{info['port']}/api/state", timeout=3) as reply:
+            return any(job["status"] in ACTIVE for job in json.load(reply)["jobs"])
+    except (OSError, ValueError, KeyError):
+        return False
+
+
 def _separate(args: argparse.Namespace) -> int:
     task = catalog.TASKS[args.task]
     # the app shows tier labels, so "Aggressive" works as well as "strong"; an id wins a clash
@@ -118,6 +131,9 @@ def _separate(args: argparse.Namespace) -> int:
         return 2
     if not inputs:
         print("no audio or video files found", file=sys.stderr)
+        return 2
+    if _app_busy():
+        print("The Split app is separating right now. Try again once its queue is empty.", file=sys.stderr)
         return 2
     if args.cpu:
         os.environ["SPLIT_DEVICE"] = "cpu"

@@ -1,8 +1,14 @@
 import hashlib
+import http.server
+import json
+import threading
+import urllib.request
 
 import pytest
 
 from split import catalog, cli, paths, weights
+
+REAL_URLOPEN = urllib.request.urlopen
 
 
 def test_data_root_follows_split_home(isolated_home):
@@ -133,3 +139,38 @@ def test_cli_lead_back_widens_the_vocal_stems(tmp_path, capsys):
     song.write_bytes(b"x")
     assert cli.main(["separate", str(song), "--lead-back", "--stems", "vocals"]) == 2
     assert "lead, back, instrumental" in capsys.readouterr().err
+
+
+def test_cli_waits_its_turn_while_the_app_is_separating(tmp_path, monkeypatch, capsys):
+    statuses = ["running"]
+
+    class State(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"jobs": [{"status": s} for s in statuses]}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    song = tmp_path / "a.wav"
+    song.write_bytes(b"x")
+    # the app answers on loopback, which the offline guard would refuse
+    monkeypatch.setattr(urllib.request, "urlopen", REAL_URLOPEN)
+    monkeypatch.setattr(cli.media, "collect", lambda inputs: [song])
+    monkeypatch.setattr(cli.paths, "expose_ffmpeg", lambda: (_ for _ in ()).throw(RuntimeError("ran")))
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), State) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        paths.instance_file().parent.mkdir(parents=True, exist_ok=True)
+        app = {"pid": 1, "port": server.server_address[1], "token": "t"}
+        paths.instance_file().write_text(json.dumps(app))
+        assert cli.main(["separate", str(song)]) == 2
+        assert "app is separating" in capsys.readouterr().err
+        statuses[0] = "done"
+        with pytest.raises(RuntimeError, match="ran"):
+            cli.main(["separate", str(song)])
+        server.shutdown()
+    paths.instance_file().write_text(json.dumps({"port": 1, "token": "t"}))
+    with pytest.raises(RuntimeError, match="ran"):
+        cli.main(["separate", str(song)])

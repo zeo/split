@@ -1,4 +1,4 @@
-# windows desktop build: dist/split/split.exe plus _internal/
+# windows desktop build: dist/split/split.exe and the console split-cli.exe, sharing _internal/
 # run through packaging/build.ps1, which fetches the pinned ffmpeg into build/ffmpeg first
 from pathlib import Path
 
@@ -31,23 +31,32 @@ hiddenimports = [
     "webview.platforms.winforms",
 ]
 
+excludes = [
+    "audio_separator.separator.architectures.mdx_separator",
+    "audio_separator.separator.architectures.vr_separator",
+    "onnx",
+    "onnx2torch",
+    "torchvision",
+    "tkinter",
+    "matplotlib",
+    "IPython",
+    "pytest",
+]
+
 a = Analysis(
     [str(ROOT / "packaging" / "launch.py")],
     pathex=[str(ROOT)],
     binaries=[(str(FFMPEG / "ffmpeg.exe"), ".")],
     datas=datas,
     hiddenimports=hiddenimports,
-    excludes=[
-        "audio_separator.separator.architectures.mdx_separator",
-        "audio_separator.separator.architectures.vr_separator",
-        "onnx",
-        "onnx2torch",
-        "torchvision",
-        "tkinter",
-        "matplotlib",
-        "IPython",
-        "pytest",
-    ],
+    excludes=excludes,
+    noarchive=False,
+)
+cli = Analysis(
+    [str(ROOT / "packaging" / "cli.py")],
+    pathex=[str(ROOT)],
+    hiddenimports=[name for name in hiddenimports if not name.startswith("webview")],
+    excludes=[*excludes, "webview"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -62,4 +71,15 @@ exe = EXE(
     upx=False,
     disable_windowed_traceback=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="split", upx=False)
+cli_exe = EXE(
+    PYZ(cli.pure),
+    cli.scripts,
+    [],
+    exclude_binaries=True,
+    name="split-cli",
+    icon=str(ROOT / "assets" / "icon.ico"),
+    console=True,
+    upx=False,
+)
+# one COLLECT is how pyinstaller puts several onedir apps in one folder; shared files land once
+coll = COLLECT(exe, a.binaries, a.datas, cli_exe, cli.binaries, cli.datas, name="split", upx=False)

@@ -47,3 +47,7 @@ Remove-Item $reportFile -ErrorAction SilentlyContinue
 $test = Start-Process -FilePath $exe -ArgumentList @('--self-test', $reportFile) -Wait -PassThru
 if ($test.ExitCode -ne 0 -or -not (Test-Path $reportFile)) { throw "self-test failed with exit code $($test.ExitCode)" }
 Write-Host "self-test: $(Get-Content -Raw $reportFile)"
+
+$models = & (Join-Path $root 'dist\split\split-cli.exe') models
+if ($LASTEXITCODE -ne 0 -or -not ($models -match 'vocals')) { throw "split-cli models failed with exit code $LASTEXITCODE" }
+Write-Host "split-cli: listed $($models.Count) lines"
