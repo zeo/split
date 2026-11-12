@@ -42,3 +42,7 @@ jobs:
       - name: UI unit tests
         shell: bash
         run: node --test tests/js/*.test.mjs
+      - name: UI syntax
+        shell: bash
+        # plain --check passes broken es modules, so each file is read as a module
+        run: for file in web/*.js; do node --input-type=module --check < "$file" || exit 1; done
