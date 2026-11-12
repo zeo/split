@@ -373,6 +373,19 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
             written.append(str(targets[stem]))
         return {"files": written}
 
+    @app.post("/api/export", dependencies=[Depends(guard)])
+    async def export_finished(request: Request) -> dict:
+        folder = Path((await _body(request)).get("folder") or "")
+        # oldest first, so of two songs with one name the first keeps it and the later gets (2)
+        finished = [job for job in reversed(store().list()) if job["status"] == "done"]
+        if not finished:
+            raise HTTPException(409, "No finished jobs to export")
+
+        def export_all() -> dict:
+            return {"files": [file for job in finished for file in export_to(job, folder)["files"]]}
+
+        return await asyncio.to_thread(export_all)
+
     @app.post("/api/jobs/{job_id}/reveal", dependencies=[Depends(guard)])
     def reveal_job(job_id: str) -> dict:
         job = record(job_id)

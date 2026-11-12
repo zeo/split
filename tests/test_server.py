@@ -115,6 +115,19 @@ def test_path_job_round_trip(client, tmp_path):
     assert client.get(f"/api/jobs/{job['id']}").status_code == 404
 
 
+def test_export_all_writes_every_finished_job_without_overwriting(client, tmp_path):
+    export = tmp_path / "export"
+    export.mkdir()
+    assert authed(client, "POST", "/api/export", json={"folder": str(export)}).status_code == 409
+    for folder in ("a", "b"):
+        spec = {"paths": [str(song_in(tmp_path / folder, "Song.wav"))], "task": "vocals", "stems": ["vocals"]}
+        wait_for(client.jobs, authed(client, "POST", "/api/jobs", json=spec).json()["jobs"][0]["id"])
+    assert client.post("/api/export", json={"folder": str(export)}).status_code == 403
+    files = authed(client, "POST", "/api/export", json={"folder": str(export)}).json()["files"]
+    assert len(files) == 2
+    assert sorted(p.name for p in export.iterdir()) == ["Song (2) - vocals.wav", "Song - vocals.wav"]
+
+
 def test_upload_job(client):
     response = authed(
         client,

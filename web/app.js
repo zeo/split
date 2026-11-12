@@ -511,6 +511,7 @@ function renderJobs() {
   const jobs = state.snapshot.jobs;
   $("dock-count").textContent = jobs.length ? String(jobs.length) : "";
   $("clear-finished").classList.toggle("hidden", !jobs.some((j) => !["queued", "running"].includes(j.status)));
+  $("export-finished").classList.toggle("hidden", !native() || !jobs.some((j) => j.status === "done"));
   const live = new Set(jobs.map((j) => j.id));
   for (const id of jobRows.keys()) if (!live.has(id)) jobRows.delete(id);
   if (!jobs.length) {
@@ -1262,6 +1263,22 @@ $("update-install").addEventListener("click", async () => {
 });
 
 $("clear-finished").addEventListener("click", () => api.remove("/api/jobs").catch(failed));
+$("export-finished").addEventListener("click", async () => {
+  const button = $("export-finished");
+  const folder = await native()?.pick_folder();
+  if (!folder || button.disabled) return;
+  button.disabled = true;
+  try {
+    const { files } = await api.post("/api/export", { folder });
+    button.textContent = `Saved ${files.length} files`;
+    button.title = folder;
+    setTimeout(() => (button.textContent = "Export all finished"), 4000);
+  } catch (error) {
+    failed(error);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 /* boot */
 
