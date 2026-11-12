@@ -39,19 +39,31 @@ class MediaError(RuntimeError):
 
 
 def collect(entries: Iterable[Path]) -> list[Path]:
-    """Files as given, plus every audio or video file under any folder, in name order."""
-    found: list[Path] = []
+    """Files as given, plus every audio or video file under any folder, in name order, each file once."""
+    found: dict[Path, Path] = {}
+    too_many = f"That is more than {MAX_FILES} files, add them in smaller batches"
+
+    def add(path: Path) -> None:
+        found.setdefault(path.resolve(), path)
+        if len(found) > MAX_FILES:
+            raise MediaError(too_many)
+
     for entry in entries:
         if entry.is_dir():
-            inside = (p for p in entry.rglob("*") if p.suffix[1:].lower() in EXTENSIONS and p.is_file())
-            found += sorted(inside, key=lambda p: str(p).lower())
+            inside = []
+            # stop walking as soon as the batch is too big, not after listing a whole drive
+            for path in entry.rglob("*"):
+                if path.suffix[1:].lower() in EXTENSIONS and path.is_file():
+                    inside.append(path)
+                    if len(inside) > MAX_FILES:
+                        raise MediaError(too_many)
+            for path in sorted(inside, key=lambda p: str(p).lower()):
+                add(path)
         elif entry.is_file():
-            found.append(entry)
+            add(entry)
         else:
             raise MediaError(f"{entry} does not exist")
-        if len(found) > MAX_FILES:
-            raise MediaError(f"That is more than {MAX_FILES} files, add them in smaller batches")
-    return found
+    return list(found.values())
 
 
 def _ffmpeg(*args: str | Path) -> subprocess.CompletedProcess:

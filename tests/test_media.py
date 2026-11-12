@@ -1,4 +1,6 @@
+import http.server
 import shutil
+import threading
 
 import numpy as np
 import pytest
@@ -30,6 +32,35 @@ def test_decode_reads_a_source_with_a_non_ascii_name(tmp_path):
     # cyrillic es encodes to d1 81 in utf-8, and cp1252 has no character at 0x81
     source = media.decode(tone(tmp_path / "Песня тест.wav", channels=2), tmp_path / "mix.wav")
     assert (source.sample_rate, source.channels) == (48000, 2)
+
+
+def test_decode_never_fetches_urls_a_playlist_names(tmp_path):
+    requests = []
+
+    class Recorder(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_error(404)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Recorder)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    playlist = tmp_path / "list.m3u8"
+    url = f"http://127.0.0.1:{server.server_port}/a.wav"
+    playlist.write_text(f"#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n{url}\n#EXT-X-ENDLIST\n")
+    try:
+        with pytest.raises(media.MediaError):
+            media.decode(playlist, tmp_path / "mix.wav")
+    finally:
+        server.shutdown()
+    assert requests == []
+
+
+def test_collect_lists_each_file_once(tmp_path):
+    song = tone(tmp_path / "a.wav")
+    assert media.collect([song, tmp_path, tmp_path / "." / "a.wav"]) == [song]
 
 
 def test_decode_rejects_files_without_audio(tmp_path):
