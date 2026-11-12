@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- a session whose stems cannot be read says so instead of waiting on "Loading audio" forever, Cancel and Retry on the progress view report their errors, and a submit that fails partway no longer resends the songs that were already queued
 - Enter on a focused button or queue row does only that, and a held or doubled Enter no longer queues the same songs twice
 - turning the loop off or redrawing it during playback no longer jumps the playhead past where you were listening
 - queue buttons answer the first click while a job runs; the list now updates its rows in place, and progress travels as small updates instead of the whole job list ten times a second

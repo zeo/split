@@ -54,7 +54,7 @@ class FakeContext {
 }
 
 globalThis.AudioContext = FakeContext;
-globalThis.fetch = async () => ({ arrayBuffer: async () => new ArrayBuffer(8) });
+globalThis.fetch = async (url) => ({ ok: url !== "missing", status: url === "missing" ? 404 : 200, arrayBuffer: async () => new ArrayBuffer(8) });
 
 let mixer;
 
@@ -173,4 +173,8 @@ test("playback ends at the end of the file when nothing loops", async () => {
   assert.equal(ended, 1);
   assert.equal(mixer.playing, false);
   assert.equal(mixer.position(), 0);
+});
+
+test("a stem the server cannot serve fails the load with its status", async () => {
+  await assert.rejects(mixer.load([{ stem: "vocals", url: "missing" }], 30), /vocals track answered 404/);
 });

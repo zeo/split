@@ -90,7 +90,9 @@ export class Mixer {
         context.createMediaElementSource(element).connect(channel.gain);
         channel.element = element;
       } else {
-        const bytes = await (await fetch(url)).arrayBuffer();
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`the ${stem} track answered ${response.status}`);
+        const bytes = await response.arrayBuffer();
         if (generation !== this.generation) return;
         channel.buffer = await context.decodeAudioData(bytes);
       }

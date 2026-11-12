@@ -399,14 +399,18 @@ async function separate() {
   $("go").disabled = true;
   try {
     const created = [];
-    if (paths.length || stems.length) created.push(...(await api.post("/api/jobs", { ...settings, paths, stems_of: stems })).jobs);
+    // each batch leaves the staging list once it is queued, so a failure in the next one is not resent twice
+    if (paths.length || stems.length) {
+      created.push(...(await api.post("/api/jobs", { ...settings, paths, stems_of: stems })).jobs);
+      state.staged = state.staged.filter((s) => !s.path && !s.stemOf);
+    }
     if (files.length) {
       const form = new FormData();
       for (const [key, value] of Object.entries(settings)) form.append(key, Array.isArray(value) ? value.join(",") : String(value));
       for (const file of files) form.append("files", file);
       created.push(...(await api.post("/api/jobs", form)).jobs);
+      state.staged = state.staged.filter((s) => !files.includes(s.file));
     }
-    state.staged = [];
     state.selected = created[0]?.id ?? null;
   } catch (error) {
     notice(error.message);
@@ -603,11 +607,12 @@ setInterval(() => {
   if (job?.status === "running") $("progress-clock").textContent = progressClock(job);
 }, 1000);
 
-$("progress-cancel").addEventListener("click", () => api.post(`/api/jobs/${state.selected}/cancel`));
-$("progress-retry").addEventListener("click", async () => {
+$("progress-cancel").addEventListener("click", () => api.post(`/api/jobs/${state.selected}/cancel`).catch(failed));
+const retrySelected = async () => {
   state.selected = (await api.post(`/api/jobs/${state.selected}/retry`)).id;
   renderStage();
-});
+};
+$("progress-retry").addEventListener("click", () => retrySelected().catch(failed));
 
 /* session: lanes + transport */
 
@@ -704,7 +709,12 @@ async function openSession(job) {
     state.linkLoop = null;
   }
   renderLoop();
-  const loaded = await loading;
+  const loaded = await loading.catch((error) => {
+    if (state.session !== session) return false;
+    $("mix-note").textContent = `The audio did not load: ${error.message}. Close the session and open it again, or separate the song again.`;
+    $("mix-note").classList.remove("hidden");
+    return false;
+  });
   if (state.session !== session || !loaded) return;
   session.ready = true;
   if (mixer.mode === "media") {
