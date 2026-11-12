@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- Zip and the per-stem Save button work in the desktop window, asking where to save the file
 - songs whose names use letters outside the Windows code page, such as Cyrillic, separate instead of failing to read
 
 ### build

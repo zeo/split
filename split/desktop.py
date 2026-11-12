@@ -314,6 +314,8 @@ def main(argv: list[str] | None = None) -> int:
         window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True)
 
     window.events.loaded += wire_events
+    # zip and save links are downloads, which pywebview cancels unless allowed; each opens a save dialog
+    webview.settings["ALLOW_DOWNLOADS"] = True
     try:
         webview.start(
             gui="edgechromium" if sys.platform == "win32" else None,
