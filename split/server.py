@@ -233,10 +233,7 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
             created.append(store().submit({**spec, "source": str(source), "name": safe_name(source.stem)}))
         for job, path in stems:
             # the stem is copied so the new job keeps its input even after the old job is removed
-            inbox = store().root / "uploads"
-            inbox.mkdir(exist_ok=True)
-            dest = inbox / f"{uuid.uuid4().hex}{path.suffix}"
-            shutil.copyfile(path, dest)
+            dest = store().store_upload(path)
             name = safe_name(f"{job['name']} ({path.stem})")
             created.append(store().submit({**spec, "source": str(dest), "owns_source": True, "name": name}))
         return {"jobs": created}
@@ -280,7 +277,7 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
         record(job_id)
         try:
             return store().retry(job_id)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, RuntimeError) as exc:
             raise HTTPException(409, str(exc)) from None
 
     @app.delete("/api/jobs/{job_id}", dependencies=[Depends(guard)])

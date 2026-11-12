@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import multiprocessing
@@ -9,6 +10,7 @@ import queue
 import shutil
 import threading
 import time
+import traceback
 import uuid
 from collections import deque
 from collections.abc import Callable
@@ -20,6 +22,8 @@ KEEP_DAYS = 7
 KEEP_JOBS = 40
 ACTIVE = ("queued", "running")
 CRASHED = "The separation process stopped unexpectedly. Try again, or pick a lighter tier."
+INTERRUPTED = "Split closed before this job finished"
+INTERNAL = "Split hit an internal error on this job."
 FINISHED = ("done", "error", "cancelled")
 
 
@@ -94,11 +98,12 @@ class Jobs:
         self.opened: dict = {"seq": 0, "paths": [], "error": None}
         self.prefetching: set[str] = set()
         self._stopping = False
+        self.session_started = _now()
         self._load()
         self._thread = threading.Thread(target=self._loop, name="split-supervisor", daemon=True)
 
     def start(self) -> None:
-        self.sweep()
+        self.sweep(startup=True)
         # warm the worker so torch is imported and the device known before the first job
         self.supervisor.ensure()
         self._thread.start()
@@ -118,9 +123,7 @@ class Jobs:
             except (OSError, ValueError):
                 continue
             if record.get("status") in ACTIVE:
-                record.update(
-                    status="error", error="Split closed before this job finished", error_kind="interrupted"
-                )
+                record.update(status="error", error=INTERRUPTED, error_kind="interrupted")
             self.records[record["id"]] = record
 
     def _save(self, record: dict) -> None:
@@ -182,9 +185,22 @@ class Jobs:
         old = self.get(job_id)
         if old is None:
             raise KeyError(job_id)
-        if old["owns_source"] and not Path(old["source"]).exists():
+        if old["status"] in ACTIVE:
+            raise RuntimeError("This job is still in the queue")
+        if not old["owns_source"]:
+            return self.submit(old)
+        source = Path(old["source"])
+        if not source.exists():
             raise FileNotFoundError("The uploaded file for this job was cleaned up, add it again")
-        return self.submit(old)
+        # the retry gets its own copy, so removing either job leaves the other its input
+        return self.submit({**old, "source": str(self.store_upload(source))})
+
+    def store_upload(self, source: Path) -> Path:
+        inbox = self.root / "uploads"
+        inbox.mkdir(exist_ok=True)
+        dest = inbox / f"{uuid.uuid4().hex}{source.suffix}"
+        shutil.copyfile(source, dest)
+        return dest
 
     def get(self, job_id: str) -> dict | None:
         with self.lock:
@@ -270,7 +286,8 @@ class Jobs:
             self.opened = {"seq": self.opened["seq"] + 1, "paths": list(files), "error": error}
             self._changed()
 
-    def sweep(self, now: float | None = None) -> int:
+    def sweep(self, now: float | None = None, startup: bool = False) -> int:
+        """Drop finished jobs older than a week; at startup also trim earlier sessions to the newest few."""
         now = now or _now()
         with self.lock:
             finished = sorted(
@@ -279,7 +296,10 @@ class Jobs:
                 reverse=True,
             )
             doomed = [
-                r for i, r in enumerate(finished) if i >= KEEP_JOBS or now - r["created"] > KEEP_DAYS * 86400
+                r
+                for i, r in enumerate(finished)
+                if now - r["created"] > KEEP_DAYS * 86400
+                or (startup and i >= KEEP_JOBS and r["created"] < self.session_started)
             ]
             for record in doomed:
                 del self.records[record["id"]]
@@ -332,15 +352,36 @@ class Jobs:
     def _loop(self) -> None:
         while (item := self._next()) is not None:
             kind, key = item
+            try:
+                if kind == "job":
+                    self._run_job(key)
+                else:
+                    self._run_download(key)
+                self.sweep()
+            except Exception:
+                logging.getLogger(__name__).exception("the queue failed on %s %s", kind, key)
+                self._abandon(kind, key, traceback.format_exc())
+
+    def _abandon(self, kind: str, key: str, trace: str) -> None:
+        """Fail the item that broke the loop, so the queue moves on instead of stalling for good."""
+        # the worker may still be busy with the request, and the next one must not queue behind it
+        self.supervisor.kill()
+        with self.lock:
+            self.current = None
+            state = self.records.get(key) if kind == "job" else self.downloads.get(key)
+            if state is None or state["status"] not in ACTIVE:
+                return
             if kind == "job":
-                self._run_job(key)
+                # a full disk may be what broke the loop; the record is marked in memory before saving
+                with contextlib.suppress(OSError):
+                    self._finish(state, "error", error=INTERNAL, error_kind="internal")
+                    (self.root / key / "error.log").write_text(trace, encoding="utf-8")
             else:
-                self._run_download(key)
-            self.sweep()
+                state.update(status="error", error=INTERNAL)
+            self._changed()
 
     def _exchange(self, request: dict, on_event: Callable[[dict], None]) -> dict:
         """Send one request and pump events until it ends, the worker dies, or a cancel lands."""
-        self.cancel_requested = False
         self.supervisor.send(request)
         while True:
             if self.cancel_requested:
@@ -349,6 +390,8 @@ class Jobs:
             event = self.supervisor.receive(0.25)
             if event is None:
                 if not self.supervisor.alive():
+                    if self._stopping:
+                        return {"type": "error", "kind": "interrupted", "message": INTERRUPTED}
                     return {"type": "error", "kind": "crash", "message": CRASHED}
                 continue
             if event["type"] == "ready":
@@ -371,6 +414,8 @@ class Jobs:
             if record is None or record["status"] != "queued":
                 return
             record.update(status="running", phase="starting", detail="Starting", started=_now())
+            # cleared with the status change, so a cancel that sees "running" is never lost
+            self.cancel_requested = False
             self.current = job_id
             self._save(record)
             self._changed()
@@ -399,18 +444,20 @@ class Jobs:
                     notes=result.get("notes", []),
                     original=result.get("original"),
                 )
-            elif result["type"] == "cancelled":
-                shutil.rmtree(self.root / job_id / "work", ignore_errors=True)
-                self._finish(record, "cancelled")
             else:
-                if trace := result.get("trace"):
-                    (self.root / job_id / "error.log").write_text(trace, encoding="utf-8")
-                self._finish(record, "error", error=result["message"], error_kind=result["kind"])
+                shutil.rmtree(self.root / job_id / "work", ignore_errors=True)
+                if result["type"] == "cancelled":
+                    self._finish(record, "cancelled")
+                else:
+                    if trace := result.get("trace"):
+                        (self.root / job_id / "error.log").write_text(trace, encoding="utf-8")
+                    self._finish(record, "error", error=result["message"], error_kind=result["kind"])
 
     def _run_download(self, model_id: str) -> None:
         with self.lock:
             state = self.downloads[model_id]
             state.update(status="running")
+            self.cancel_requested = False
             self._changed()
 
         def on_event(event: dict) -> None:

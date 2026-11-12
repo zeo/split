@@ -1,5 +1,7 @@
 import json
+from pathlib import Path
 
+import pytest
 from conftest import wait_for
 
 from split.jobs import KEEP_JOBS
@@ -85,6 +87,33 @@ def test_interrupted_jobs_are_marked_on_reload(make_jobs, tmp_path):
     assert again["error_kind"] == "interrupted"
 
 
+def test_errors_clear_the_work_folder(make_jobs, tmp_path):
+    jobs = make_jobs("fail")
+    jobs.start()
+    record = wait_for(jobs, jobs.submit(spec(tmp_path / "a.wav"))["id"])
+    assert record["status"] == "error"
+    assert not (jobs.job_dir(record["id"]) / "work").exists()
+
+
+def test_a_broken_reply_fails_one_job_and_the_queue_goes_on(make_jobs, tmp_path):
+    jobs = make_jobs("garbled")
+    jobs.start()
+    broken = wait_for(jobs, jobs.submit(spec(tmp_path / "a.wav"))["id"])
+    assert (broken["status"], broken["error_kind"]) == ("error", "internal")
+    assert "KeyError" in (jobs.job_dir(broken["id"]) / "error.log").read_text(encoding="utf-8")
+    jobs.supervisor.behaviour = "finish"
+    assert wait_for(jobs, jobs.submit(spec(tmp_path / "b.wav"))["id"])["status"] == "done"
+
+
+def test_quitting_mid_job_reads_as_interrupted(make_jobs, tmp_path):
+    jobs = make_jobs("hang")
+    jobs.start()
+    record = jobs.submit(spec(tmp_path / "a.wav"))
+    wait_for(jobs, record["id"], statuses=("running",))
+    jobs.stop()
+    assert wait_for(jobs, record["id"])["error_kind"] == "interrupted"
+
+
 def test_retry_and_delete(make_jobs, tmp_path):
     jobs = make_jobs("fail")
     jobs.start()
@@ -97,6 +126,26 @@ def test_retry_and_delete(make_jobs, tmp_path):
     assert not jobs.job_dir(first["id"]).exists()
 
 
+def test_a_retried_upload_keeps_its_input_when_the_old_job_goes(make_jobs, tmp_path):
+    jobs = make_jobs("fail")
+    jobs.start()
+    upload = tmp_path / "upload.wav"
+    upload.write_bytes(b"x")
+    first = wait_for(jobs, jobs.submit(spec(upload, owns_source=True))["id"])
+    second = jobs.retry(first["id"])
+    assert second["source"] != first["source"]
+    jobs.delete(first["id"])
+    assert not upload.exists()
+    assert Path(second["source"]).read_bytes() == b"x"
+
+
+def test_a_queued_job_cannot_be_retried(make_jobs, tmp_path):
+    jobs = make_jobs()
+    record = jobs.submit(spec(tmp_path / "a.wav"))
+    with pytest.raises(RuntimeError):
+        jobs.retry(record["id"])
+
+
 def test_uploads_are_removed_with_their_job(make_jobs, tmp_path):
     jobs = make_jobs()
     jobs.start()
@@ -107,12 +156,25 @@ def test_uploads_are_removed_with_their_job(make_jobs, tmp_path):
     jobs.delete(record["id"])
 
 
-def test_sweep_keeps_recent_jobs_only(make_jobs, tmp_path):
+def test_a_long_batch_keeps_every_job(make_jobs, tmp_path):
     jobs = make_jobs()
     jobs.start()
-    ids = [jobs.submit(spec(tmp_path / f"{i}.wav"))["id"] for i in range(KEEP_JOBS + 3)]
+    ids = [jobs.submit(spec(tmp_path / f"{i}.wav"))["id"] for i in range(KEEP_JOBS + 5)]
     for job_id in ids:
         wait_for(jobs, job_id)
-    assert len(jobs.list()) == KEEP_JOBS
+    assert len(jobs.list()) == KEEP_JOBS + 5
     old = jobs.list()[-1]
-    assert jobs.sweep(now=old["created"] + 30 * 86400) == KEEP_JOBS
+    assert jobs.sweep(now=old["created"] + 30 * 86400) == KEEP_JOBS + 5
+
+
+def test_startup_trims_earlier_sessions_to_the_newest(make_jobs, tmp_path):
+    root = tmp_path / "jobs"
+    earlier = make_jobs(root=root)
+    earlier.start()
+    ids = [earlier.submit(spec(tmp_path / f"{i}.wav"))["id"] for i in range(KEEP_JOBS + 3)]
+    for job_id in ids:
+        wait_for(earlier, job_id)
+    earlier.stop()
+    later = make_jobs(root=root)
+    later.start()
+    assert {r["id"] for r in later.list()} == set(ids[3:])

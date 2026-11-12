@@ -5,6 +5,10 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- a batch of more than 40 songs keeps every finished job; the count limit only trims jobs left from earlier sessions when Split starts
+- retrying an uploaded song gives the retry its own copy, so clearing the failed job no longer deletes the retry's input
+- an unexpected error fails that one job instead of stopping the queue for the rest of the session
+- closing Split mid-job marks the job as interrupted rather than crashed, and failed jobs no longer leave their intermediate files behind
 - Zip and the per-stem Save button work in the desktop window, asking where to save the file
 - songs whose names use letters outside the Windows code page, such as Cyrillic, separate instead of failing to read
 

@@ -62,6 +62,8 @@ class FakeSupervisor:
         if request["kind"] != "separate":
             self.events.put({"type": "done", "key": key})
             return
+        # the engine keeps its intermediate files here until the job ends
+        (Path(request["job_dir"]) / "work").mkdir(parents=True, exist_ok=True)
         self.events.put(
             {
                 "type": "progress",
@@ -76,6 +78,9 @@ class FakeSupervisor:
             return
         if self.behaviour == "crash":
             self.running = False
+            return
+        if self.behaviour == "garbled":
+            self.events.put({"type": "done", "key": key})
             return
         if self.behaviour == "fail":
             self.events.put(
