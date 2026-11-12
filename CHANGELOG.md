@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- the original track no longer clips on loud masters when only some stems are kept; its level now counts toward the shared trim
 - exporting into a folder that already holds that song's stems writes "song (2) - vocals.wav" and so on instead of overwriting them, in the app and the command line
 - a batch of more than 40 songs keeps every finished job; the count limit only trims jobs left from earlier sessions when Split starts
 - retrying an uploaded song gives the retry its own copy, so clearing the failed job no longer deletes the retry's input

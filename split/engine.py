@@ -388,7 +388,9 @@ class Runner:
             if len(parts) > 1:
                 sources[stem] = work / f"{stem}.wav"
                 media.mix(parts, sources[stem])
-        gain = media.shared_gain(list(sources.values()))
+        keep_original = request.get("original", True)
+        # the original shares the trim, so it has to fit under the ceiling too
+        gain = media.shared_gain([*sources.values(), *([mix] if keep_original else [])])
         for stem, wav in sources.items():
             name = f"{stem}.{fmt}"
             media.encode(wav, job_dir / name, fmt, source, gain)
@@ -397,7 +399,7 @@ class Runner:
             done += 0.25
             progress("encode", f"Wrote {stem}")
         original = None
-        if request.get("original", True):
+        if keep_original:
             # the mix at the same trim, so switching to it in the player is level-matched and sample-aligned
             original = ORIGINAL
             media.encode(mix, job_dir / original, "flac", source, gain)

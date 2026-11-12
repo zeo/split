@@ -101,6 +101,20 @@ def test_a_subset_of_stems_is_written_alone(monkeypatch, tmp_path):
     assert not (job_dir / "instrumental.wav").exists()
 
 
+@needs_ffmpeg
+def test_a_loud_original_is_trimmed_with_a_subset_of_stems(monkeypatch, tmp_path):
+    runner = fake_runner(monkeypatch)
+    source = song(tmp_path / "in.wav", amplitude=1.3, channels=2, subtype="FLOAT")
+    job_dir, result, _ = separate(runner, tmp_path, source, "vocals", "best", ["vocals"])
+
+    original, _ = sf.read(job_dir / result["original"], dtype="float64", always_2d=True)
+    vocals, _ = sf.read(job_dir / result["outputs"]["vocals"], dtype="float64", always_2d=True)
+    assert np.abs(original).max() < 1.0
+    assert result["trim_db"] < 0
+    # the trim is shared, so the stem still sits at its share of the original
+    assert np.abs(vocals * 2 - original).max() < 1e-3
+
+
 def write_members(tmp_path, waves):
     results = []
     for index, wave in enumerate(waves):
