@@ -389,7 +389,8 @@ function renderStaged() {
 }
 
 async function separate() {
-  if (!state.staged.length) return;
+  // the button stays disabled while a submit is in flight, so a second Enter cannot queue the batch twice
+  if (!state.staged.length || $("go").disabled) return;
   const task = currentTask();
   const settings = { task: task.id, tier: currentTier(task).id, isolate: isolating(task), lead_back: splitting(task), mode: state.mode, stems: chosenStems(task), format: state.format };
   const paths = state.staged.filter((s) => s.path).map((s) => s.path);
@@ -1187,7 +1188,9 @@ document.addEventListener("keydown", (event) => {
     addFiles();
     return;
   }
-  if (event.key === "Enter" && state.staged.length && !state.selected) {
+  // Enter on a focused control belongs to that control
+  const control = target instanceof Element && target.closest("button, a, select, textarea, [tabindex]");
+  if (event.key === "Enter" && !event.repeat && !control && state.staged.length && !state.selected) {
     event.preventDefault();
     separate();
     return;

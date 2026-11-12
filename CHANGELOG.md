@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- Enter on a focused button or queue row does only that, and a held or doubled Enter no longer queues the same songs twice
 - turning the loop off or redrawing it during playback no longer jumps the playhead past where you were listening
 - queue buttons answer the first click while a job runs; the list now updates its rows in place, and progress travels as small updates instead of the whole job list ten times a second
 - the model list refreshes once when a job finishes, rather than on every update for three seconds after
