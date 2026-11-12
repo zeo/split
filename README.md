@@ -64,7 +64,7 @@ uv sync --extra desktop
 uv run python -m split.desktop
 ```
 
-Needs Python 3.11 to 3.13 and FFmpeg on your PATH. `packaging/build.ps1` makes the Windows build. Only Windows with an NVIDIA card is tested.
+Needs Python 3.13 and FFmpeg on your PATH. `packaging/build.ps1` makes the Windows build. Only Windows with an NVIDIA card is tested.
 
 ## License
 

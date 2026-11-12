@@ -2,6 +2,11 @@
 
 dates are release-tag dates.
 
+## [unreleased]
+
+### build
+- running from source needs Python 3.13, the version the Windows build ships
+
 ## [0.4.0] - 2026-10-23
 
 ### models
