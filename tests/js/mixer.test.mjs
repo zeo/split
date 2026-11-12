@@ -178,3 +178,15 @@ test("playback ends at the end of the file when nothing loops", async () => {
 test("a stem the server cannot serve fails the load with its status", async () => {
   await assert.rejects(mixer.load([{ stem: "vocals", url: "missing" }], 30), /vocals track answered 404/);
 });
+
+test("mixdown levels follow the faders and solo, but not the a/b switch", () => {
+  mixer.referenceStem = "original";
+  mixer.set("vocals", { db: -6 });
+  mixer.setReference(true);
+  const levels = mixer.levels();
+  assert.deepEqual(Object.keys(levels), ["vocals", "drums"]);
+  assert.ok(Math.abs(levels.vocals - 0.501) < 0.001);
+  assert.equal(levels.drums, 1);
+  mixer.set("drums", { solo: true });
+  assert.deepEqual(mixer.levels(), { vocals: 0, drums: 1 });
+});

@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__, catalog, media, paths, weights
@@ -29,6 +30,8 @@ TOKEN_HEADER = "x-split-token"
 TOKEN_SLOT = '<meta name="split-token" content="">'
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _SUFFIX = re.compile(r"\.[a-z0-9]{1,8}")
+# the mixer's faders top out at +6 dB
+MAX_MIX_GAIN = 2.0
 
 
 def safe_name(name: str) -> str:
@@ -258,7 +261,10 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
             raise HTTPException(400, str(exc)) from None
 
     def stem_source(item: dict) -> tuple[dict, Path]:
-        job, path = output(str(item.get("job", "")), str(item.get("stem", "")))
+        return lossless_stem(str(item.get("job", "")), str(item.get("stem", "")))
+
+    def lossless_stem(job_id: str, stem: str) -> tuple[dict, Path]:
+        job, path = output(job_id, stem)
         lossless = path.parent / "lossless" / f"{path.stem}.flac"
         return job, lossless if lossless.is_file() else path
 
@@ -313,6 +319,42 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
             media_type=media.MEDIA_TYPES[job["format"]],
             filename=f"{job['name']} - {stem}.{job['format']}",
             content_disposition_type="attachment" if download else "inline",
+        )
+
+    @app.get("/api/jobs/{job_id}/mixdown")
+    def get_mixdown(job_id: str, gains: str = "") -> FileResponse:
+        job = record(job_id)
+        levels = {}
+        for pair in filter(None, gains.split(",")):
+            stem, _, level = pair.partition(":")
+            try:
+                levels[stem] = float(level)
+            except ValueError:
+                raise HTTPException(400, f"Bad gain for {stem}") from None
+            if stem not in job["outputs"] or not 0 <= levels[stem] <= MAX_MIX_GAIN:
+                raise HTTPException(400, f"Bad gain for {stem}")
+        heard = {stem: level for stem, level in levels.items() if level > 0}
+        if not heard:
+            raise HTTPException(400, "Every lane is silent")
+        sources = [lossless_stem(job_id, stem)[1] for stem in heard]
+        fmt = job["format"]
+        job_dir = store().job_dir(job_id)
+        token = uuid.uuid4().hex
+        work, dest = job_dir / f"mix.{token}.wav", job_dir / f"mixdown.{token}.{fmt}"
+        try:
+            source = media.mix(sources, work, list(heard.values()))
+            media.encode(work, dest, fmt, source, media.shared_gain([work]))
+        except media.MediaError as exc:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(500, str(exc)) from None
+        finally:
+            work.unlink(missing_ok=True)
+        return FileResponse(
+            dest,
+            media_type=media.MEDIA_TYPES[fmt],
+            filename=f"{job['name']} - mix.{fmt}",
+            content_disposition_type="attachment",
+            background=BackgroundTask(dest.unlink, missing_ok=True),
         )
 
     def original(job_id: str) -> Path:

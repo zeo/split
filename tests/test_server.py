@@ -3,7 +3,9 @@ import zipfile
 from pathlib import Path
 from urllib.parse import unquote
 
+import numpy as np
 import pytest
+import soundfile as sf
 from conftest import wait_for
 from fastapi.testclient import TestClient
 
@@ -336,3 +338,29 @@ def test_malformed_bodies_are_refused_cleanly(client):
     )
     assert bad.status_code == 400
     assert authed(client, "POST", "/api/scan", json=["a"]).status_code == 400
+
+
+def test_a_mixdown_sums_the_lanes_at_their_gains(client, tmp_path):
+    song = song_in(tmp_path, "Song.wav")
+    spec = {"paths": [str(song)], "task": "vocals", "stems": ["vocals", "instrumental"]}
+    job = wait_for(client.jobs, authed(client, "POST", "/api/jobs", json=spec).json()["jobs"][0]["id"])
+    job_dir = client.jobs.job_dir(job["id"])
+    rng = np.random.default_rng(3)
+    lanes = {stem: rng.uniform(-0.4, 0.4, (4410, 2)).astype("float32") for stem in job["outputs"]}
+    for stem, data in lanes.items():
+        sf.write(job_dir / job["outputs"][stem], data, 44100, subtype="FLOAT")
+    url = f"/api/jobs/{job['id']}/mixdown"
+
+    both = client.get(url, params={"gains": "vocals:1,instrumental:1"})
+    assert both.status_code == 200
+    assert unquote(both.headers["content-disposition"]).endswith("Song - mix.wav")
+    summed, rate = sf.read(io.BytesIO(both.content), dtype="float32")
+    assert rate == 44100
+    assert np.abs(summed - (lanes["vocals"] + lanes["instrumental"])).max() < 1e-5
+
+    alone, _ = sf.read(io.BytesIO(client.get(url, params={"gains": "vocals:0.5,instrumental:0"}).content))
+    assert np.abs(alone - lanes["vocals"] * 0.5).max() < 1e-5
+    assert not [p for p in job_dir.iterdir() if p.name.startswith("mix")]
+
+    for gains in ["vocals:loud", "drums:1", "vocals:-1", "vocals:nan", "vocals:3", "vocals:0", ""]:
+        assert client.get(url, params={"gains": gains}).status_code == 400, gains

@@ -875,6 +875,7 @@ function renderTransport() {
   const ready = Boolean(state.session?.ready);
   const play = $("play");
   play.disabled = !ready;
+  $("mixdown").disabled = !ready;
   play.classList.toggle("playing", mixer.playing);
   play.setAttribute("aria-label", mixer.playing ? "Pause" : "Play");
   play.title = ready ? `${mixer.playing ? "Pause" : "Play"} (Space)` : "Loading audio";
@@ -920,6 +921,15 @@ $("run-again").addEventListener("click", () => {
 });
 $("zip").addEventListener("click", () => {
   if (state.session) window.location.href = `/api/jobs/${state.session.id}/zip`;
+});
+$("mixdown").addEventListener("click", () => {
+  if (!state.session?.ready) return;
+  const levels = Object.entries(mixer.levels());
+  if (!levels.some(([, gain]) => gain > 0)) return alert("Every stem is muted, so the mix would be silent.");
+  const gains = levels.map(([stem, gain]) => `${stem}:${gain.toFixed(4)}`).join(",");
+  const link = Object.assign(document.createElement("a"), { download: "" });
+  link.href = `/api/jobs/${state.session.id}/mixdown?gains=${encodeURIComponent(gains)}`;
+  link.click();
 });
 $("reveal").addEventListener("click", () => {
   if (state.session) api.post(`/api/jobs/${state.session.id}/reveal`).catch(failed);

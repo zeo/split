@@ -195,10 +195,21 @@ export class Mixer {
   }
 
   audible(stem) {
-    const channel = this.channels.get(stem);
-    if (this.reference) return stem === this.referenceStem;
+    return this.reference ? stem === this.referenceStem : this.balanced(stem);
+  }
+
+  balanced(stem) {
     const soloing = [...this.channels.values()].some((c) => c.solo);
-    return soloing ? channel.solo : !channel.mute;
+    return soloing ? this.channels.get(stem).solo : !this.channels.get(stem).mute;
+  }
+
+  // each stem's share of the balance set on the faders, whatever the a/b switch says
+  levels() {
+    return Object.fromEntries(
+      [...this.channels]
+        .filter(([stem]) => stem !== this.referenceStem)
+        .map(([stem, channel]) => [stem, this.balanced(stem) ? toGain(channel.db) : 0]),
+    );
   }
 
   applyGains() {

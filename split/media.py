@@ -110,11 +110,12 @@ def encode(wav: Path, dest: Path, fmt: str, source: Source, gain: float = 1.0) -
         raise MediaError(f"Could not encode {dest.name}: {reason}")
 
 
-def mix(sources: list[Path], dest: Path) -> None:
-    """Sum stems sample-by-sample; used when several model outputs fold into one stem."""
+def mix(sources: list[Path], dest: Path, gains: list[float] | None = None) -> Source:
+    """Sum stems sample-by-sample, each scaled by its gain; folds model outputs and renders mixdowns."""
     total = None
-    for path in sources:
+    for path, gain in zip(sources, gains or [1.0] * len(sources), strict=True):
         data, rate = sf.read(path, dtype="float32", always_2d=True)
+        data *= gain
         if total is None:
             total = data
         else:
@@ -123,6 +124,7 @@ def mix(sources: list[Path], dest: Path) -> None:
                 data, ((0, length - len(data)), (0, 0))
             )
     sf.write(dest, total, rate, subtype="FLOAT")
+    return Source(sample_rate=rate, channels=total.shape[1], duration=len(total) / rate)
 
 
 def peak(wav: Path) -> float:
