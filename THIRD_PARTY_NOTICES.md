@@ -35,7 +35,7 @@ BS-RoFormer SW is reported to be extracted from Apple Logic Pro. Its original up
 |---|---|---|---|
 | FFmpeg (Gyan essentials build) | 9.0.2 | GPL-3.0 | https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2, source at https://ffmpeg.org |
 | PyTorch with CUDA 13.0 runtime | 2.13.0 | BSD-3-Clause and others; CUDA libraries under the NVIDIA CUDA EULA | https://github.com/pytorch/pytorch |
-| audio-separator | 0.47.0 | MIT | https://github.com/nomadkaraoke/python-audio-separator |
+| audio-separator | 0.48.0 | MIT | https://github.com/nomadkaraoke/python-audio-separator |
 | diffq-fixed | 0.2.4 | CC-BY-NC-4.0 | https://pypi.org/project/diffq-fixed |
 | pywebview | 6.2.1 | BSD-3-Clause | https://github.com/r0x0r/pywebview |
 | pythonnet | 3.2.1 | MIT | https://github.com/pythonnet/pythonnet |

@@ -1,3 +1,4 @@
+import logging
 import shutil
 
 import numpy as np
@@ -154,3 +155,20 @@ def test_single_member_is_passed_through(tmp_path):
     step = Step(("a",), {"vocals": "vocals"})
     results = write_members(tmp_path, [np.zeros((10, 2), np.float32)])
     assert engine.Runner._combine(None, step, results, tmp_path / "out") is results[0]
+
+
+def test_loading_trusts_the_fetched_files_and_never_downloads(tmp_path):
+    separator_class = engine._separator_class()
+    separator = separator_class.__new__(separator_class)
+    separator.model_file_dir = str(tmp_path)
+    separator.logger = logging.getLogger("test")
+    model = MODELS["resurrection-voc"]
+    # upstream publishes checksums for these names, so its own loader would delete the stand-ins
+    for file in model.files:
+        (tmp_path / file.name).write_bytes(b"stand-in")
+    found = separator.download_model_files(model.load_name)
+    assert found[0] == model.load_name
+    assert all((tmp_path / file.name).read_bytes() == b"stand-in" for file in model.files)
+    (tmp_path / model.files[0].name).unlink()
+    with pytest.raises(FileNotFoundError):
+        separator.download_model_files(model.load_name)

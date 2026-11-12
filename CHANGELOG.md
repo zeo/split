@@ -26,6 +26,7 @@ dates are release-tag dates.
 
 ### build
 - running from source needs Python 3.13, the version the Windows build ships
+- audio-separator 0.48.0, which loads model weights without running pickled code; split still loads only the files it verified against its own catalog and never downloads mid-job
 
 ## [0.4.0] - 2026-10-23
 

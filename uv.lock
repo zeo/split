@@ -58,7 +58,7 @@ wheels = [
 
 [[package]]
 name = "audio-separator"
-version = "0.47.0"
+version = "0.48.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "audioop-lts" },
@@ -86,9 +86,9 @@ dependencies = [
     { name = "torch", version = "2.13.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/91/349d3d5ce762ed9cdc4b8eb41094a0ba365e199e930240c45962dc1b568f/audio_separator-0.47.0.tar.gz", hash = "sha256:08ec182cdd856fe7b70e0ec18a625fb49cde35be102203a6d0b12da6abfcbc35", size = 365635, upload-time = "2026-08-27T02:15:31.893Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2f/a2/3cfea84520ec72de00b0f1173b542bb615ad048177f6c8b55d61bc8b9ba5/audio_separator-0.48.0.tar.gz", hash = "sha256:5f80f4032aa844d5e8b5c958a440c3d702bf03e8a2c163bf199e023e999ea695", size = 381157, upload-time = "2026-10-29T17:22:06.975Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8c/ba/24b4a5d2147acf35012758c3de7d910399a55a8a4aa74f7a039af530a00d/audio_separator-0.47.0-py3-none-any.whl", hash = "sha256:756f3b620d78e581a117c6b6d96fe4f0eafc3432ab2824cb11532b4868bfd9a8", size = 433592, upload-time = "2026-08-27T02:15:30.181Z" },
+    { url = "https://files.pythonhosted.org/packages/83/50/29d83017f8efc049a9db683b20467083e3130256a98ea24237eb3eb6d016/audio_separator-0.48.0-py3-none-any.whl", hash = "sha256:c97b3bedcd54b401c22df7d518284a9ed143f66071496347e9f8da9d32ca7aec", size = 447552, upload-time = "2026-10-29T17:22:04.966Z" },
 ]
 
 [package.optional-dependencies]
@@ -1571,7 +1571,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "audio-separator", extras = ["cpu"], specifier = "==0.47.0" },
+    { name = "audio-separator", extras = ["cpu"], specifier = "==0.48.0" },
     { name = "audioread", specifier = ">=3" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "numpy", specifier = ">=2" },

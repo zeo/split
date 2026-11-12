@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "audio-separator[cpu]==0.47.0",
+    "audio-separator[cpu]==0.48.0",
     "torch==2.13.0",
     "audioread>=3",
     "numpy>=2",

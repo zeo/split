@@ -151,6 +151,12 @@ def _separator_class():
                 }
             return grouped
 
+        # weights.fetch checked every file against the catalog before the run, so skip upstream's
+        # rehash, which deletes a file it disagrees with and downloads it again
+        def download_file_from_first_available(self, urls, output_path):
+            if not os.path.isfile(output_path):
+                raise FileNotFoundError(output_path)
+
     return CatalogSeparator
 
 
