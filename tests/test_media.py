@@ -26,6 +26,12 @@ def test_decode_reports_source_shape_and_writes_float_stereo(tmp_path):
     assert (info.samplerate, info.channels, info.subtype) == (44100, 2, "FLOAT")
 
 
+def test_decode_reads_a_source_with_a_non_ascii_name(tmp_path):
+    # cyrillic es encodes to d1 81 in utf-8, and cp1252 has no character at 0x81
+    source = media.decode(tone(tmp_path / "Песня тест.wav", channels=2), tmp_path / "mix.wav")
+    assert (source.sample_rate, source.channels) == (48000, 2)
+
+
 def test_decode_rejects_files_without_audio(tmp_path):
     bogus = tmp_path / "notes.wav"
     bogus.write_text("not audio")

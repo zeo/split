@@ -56,7 +56,10 @@ def collect(entries: Iterable[Path]) -> list[Path]:
 
 def _ffmpeg(*args: str | Path) -> subprocess.CompletedProcess:
     command = [ffmpeg_bin(), "-hide_banner", "-nostdin", "-y", *map(str, args)]
-    return subprocess.run(command, capture_output=True, text=True, creationflags=_NO_WINDOW)
+    # ffmpeg writes utf-8 whatever the console code page, and names a non-ascii source in it
+    return subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=_NO_WINDOW
+    )
 
 
 def decode(source: Path, dest: Path) -> Source:

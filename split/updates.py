@@ -46,7 +46,13 @@ def newer(candidate: str, current: str) -> bool:
 
 def _run(exe: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [str(exe), *args], capture_output=True, text=True, timeout=120, creationflags=_NO_WINDOW
+        [str(exe), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        creationflags=_NO_WINDOW,
     )
 
 

@@ -4,6 +4,9 @@ dates are release-tag dates.
 
 ## [unreleased]
 
+### fixes
+- songs whose names use letters outside the Windows code page, such as Cyrillic, separate instead of failing to read
+
 ### build
 - running from source needs Python 3.13, the version the Windows build ships
 
