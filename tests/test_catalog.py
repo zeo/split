@@ -30,7 +30,7 @@ def test_model_ids_and_file_names_are_unique():
     files = [f.name for m in catalog.MODELS.values() for f in m.files]
     labels = [(m.author, m.label) for m in catalog.MODELS.values()]
     assert len(labels) == len(set(labels))
-    assert len(files) >= len(set(files))
+    assert len(files) == len(set(files))
     assert catalog.file_names() == set(files)
 
 

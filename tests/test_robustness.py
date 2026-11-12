@@ -124,6 +124,7 @@ def test_one_process_downloads_a_file_while_the_other_waits(monkeypatch):
     assert sorted(downloads) == sorted(f.name for f in model.files)
 
 
+@pytest.mark.prefetch
 def test_the_next_job_prefetches_its_weights(make_jobs, tmp_path, monkeypatch):
     from conftest import wait_for
 

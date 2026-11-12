@@ -1,5 +1,7 @@
 import queue
+import shutil
 import time
+import types
 import urllib.request
 from pathlib import Path
 
@@ -21,6 +23,14 @@ def offline(monkeypatch):
         raise AssertionError("tests do not download")
 
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
+
+
+@pytest.fixture(autouse=True)
+def quiet_background(request, monkeypatch):
+    # prefetch threads outlive the test and its offline patch, and free space depends on the machine
+    if not request.node.get_closest_marker("prefetch"):
+        monkeypatch.setattr(Jobs, "prefetch", lambda self, record: None)
+    monkeypatch.setattr(shutil, "disk_usage", lambda folder: types.SimpleNamespace(free=1 << 40))
 
 
 class FakeSupervisor:

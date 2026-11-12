@@ -70,3 +70,4 @@ ignore = ["SIM905"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["prefetch: keep the real weight prefetch for this test"]
