@@ -150,6 +150,7 @@ def _separate(args: argparse.Namespace) -> int:
                 "stems": stems,
                 "format": args.format,
                 "original": False,
+                "lossless": False,
             }
             try:
                 result = runner.separate(request, emit)

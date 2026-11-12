@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- separating a stem from an MP3 job again now starts from a 24-bit FLAC copy kept beside the MP3, so the second job does not inherit MP3 artifacts
 - MP3 and FLAC jobs finish sooner: stems are now encoded side by side, which takes about 8 seconds off a three-minute six-stem MP3 job
 - a session whose stems cannot be read says so instead of waiting on "Loading audio" forever, Cancel and Retry on the progress view report their errors, and a submit that fails partway no longer resends the songs that were already queued
 - Enter on a focused button or queue row does only that, and a held or doubled Enter no longer queues the same songs twice

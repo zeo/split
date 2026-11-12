@@ -258,7 +258,9 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
             raise HTTPException(400, str(exc)) from None
 
     def stem_source(item: dict) -> tuple[dict, Path]:
-        return output(str(item.get("job", "")), str(item.get("stem", "")))
+        job, path = output(str(item.get("job", "")), str(item.get("stem", "")))
+        lossless = path.parent / "lossless" / f"{path.stem}.flac"
+        return job, lossless if lossless.is_file() else path
 
     @app.post("/api/scan", dependencies=[Depends(guard)])
     async def scan_paths(request: Request) -> dict:

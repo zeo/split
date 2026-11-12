@@ -406,9 +406,15 @@ class Runner:
             # the mix at the same trim, so switching to it in the player is level-matched and sample-aligned
             original = ORIGINAL
             writes["original"] = (mix, original, "flac")
+        # chaining an mp3 stem into another job reads this copy, so it is not encoded lossy twice
+        lossless = job_dir / "lossless" if fmt == "mp3" and request.get("lossless", True) else None
+        if lossless:
+            lossless.mkdir(exist_ok=True)
 
         def write(key: str, wav: Path, name: str, codec: str) -> str:
             media.encode(wav, job_dir / name, codec, source, gain)
+            if lossless and key in outputs:
+                media.encode(wav, lossless / f"{key}.flac", "flac", source, gain)
             media.write_peaks(wav, peaks_dir / f"{key}.json")
             return key
 

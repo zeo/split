@@ -259,6 +259,17 @@ def test_a_stem_can_feed_a_new_job(client, tmp_path):
     assert authed(client, "POST", "/api/jobs", json=missing).status_code == 404
 
 
+def test_an_mp3_stem_feeds_the_new_job_its_lossless_copy(client, tmp_path):
+    song = song_in(tmp_path, "Song.wav")
+    spec = {"paths": [str(song)], "task": "vocals", "format": "mp3"}
+    parent = wait_for(client.jobs, authed(client, "POST", "/api/jobs", json=spec).json()["jobs"][0]["id"])
+    body = {"task": "dereverb", "stems_of": [{"job": parent["id"], "stem": "vocals"}]}
+    child = authed(client, "POST", "/api/jobs", json=body).json()["jobs"][0]
+    assert child["name"] == "Song (vocals)"
+    assert child["source"].endswith(".flac")
+    assert client.get(f"/api/jobs/{parent['id']}/stems/vocals?download=true").content == b"vocals" * 64
+
+
 def test_original_mix_is_served_beside_the_stems(client, tmp_path):
     song = song_in(tmp_path, "a.wav")
     created = authed(client, "POST", "/api/jobs", json={"paths": [str(song)], "task": "vocals"}).json()

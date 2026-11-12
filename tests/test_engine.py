@@ -116,6 +116,25 @@ def test_a_loud_original_is_trimmed_with_a_subset_of_stems(monkeypatch, tmp_path
     assert np.abs(vocals * 2 - original).max() < 1e-3
 
 
+@needs_ffmpeg
+def test_mp3_jobs_keep_lossless_stems_at_the_same_trim(monkeypatch, tmp_path):
+    runner = fake_runner(monkeypatch)
+    source = song(tmp_path / "in.wav", amplitude=1.3, channels=2, rate=44100, subtype="FLOAT")
+    job_dir, result, _ = separate(runner, tmp_path, source, "vocals", "best", ["vocals"], format="mp3")
+
+    assert result["outputs"] == {"vocals": "vocals.mp3"}
+    flac, _ = sf.read(job_dir / "lossless" / "vocals.flac", dtype="float64", always_2d=True)
+    original, _ = sf.read(job_dir / result["original"], dtype="float64", always_2d=True)
+    assert sf.info(job_dir / "lossless" / "vocals.flac").subtype == "PCM_24"
+    assert np.abs(flac * 2 - original).max() < 1e-3
+    # the cli keeps only the outputs, so it skips the copies
+    (tmp_path / "cli").mkdir()
+    cli_dir, _, _ = separate(
+        runner, tmp_path / "cli", source, "vocals", "best", ["vocals"], format="mp3", lossless=False
+    )
+    assert not (cli_dir / "lossless").exists()
+
+
 def write_members(tmp_path, waves):
     results = []
     for index, wave in enumerate(waves):
