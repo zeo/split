@@ -40,14 +40,39 @@ def _hand_off(files: list[str]) -> bool:
         return False
 
 
+DYNAMIC_MODULES = (
+    "audio_separator.separator",
+    "audio_separator.separator.architectures.mdxc_separator",
+    "audio_separator.separator.architectures.demucs_separator",
+    *(("webview.platforms.edgechromium", "webview.platforms.winforms") if sys.platform == "win32" else ()),
+)
+DYNAMIC_PACKAGES = (
+    "audio_separator.separator.uvr_lib_v5.roformer",
+    "audio_separator.separator.uvr_lib_v5.demucs",
+    "audio_separator.separator.roformer",
+)
+
+
 def self_test(report_path: str | None) -> int:
     """Smoke check for packaged builds: every heavy import resolves and ffmpeg runs."""
+    import importlib
+    import pkgutil
     import subprocess
 
-    import audio_separator.separator  # noqa: F401
     import torch
 
     from . import engine, server  # noqa: F401
+
+    # the modules audio-separator and pywebview load by name, which the bundle must carry
+    for name in DYNAMIC_MODULES:
+        importlib.import_module(name)
+    for name in DYNAMIC_PACKAGES:
+        package = importlib.import_module(name)
+        for module in pkgutil.iter_modules(package.__path__, f"{name}."):
+            if not module.name.endswith(".__main__"):
+                importlib.import_module(module.name)
+    engine._silence_progress_bars()
+    engine._speed_up_roformers()
 
     ffmpeg = subprocess.run([paths.ffmpeg_bin(), "-version"], capture_output=True, text=True, check=True)
     report = {
