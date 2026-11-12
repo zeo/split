@@ -345,10 +345,10 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
         if not folder.is_dir():
             raise HTTPException(400, "Pick a folder that exists")
         written = []
+        targets = paths.free_stem_names(folder, job["name"], list(job["outputs"]), job["format"])
         for stem, name in job["outputs"].items():
-            dest = folder / f"{job['name']} - {stem}.{job['format']}"
-            shutil.copyfile(store().job_dir(job_id) / name, dest)
-            written.append(str(dest))
+            shutil.copyfile(store().job_dir(job_id) / name, targets[stem])
+            written.append(str(targets[stem]))
         return {"files": written}
 
     @app.post("/api/jobs/{job_id}/reveal", dependencies=[Depends(guard)])

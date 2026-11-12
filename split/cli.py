@@ -161,10 +161,10 @@ def _separate(args: argparse.Namespace) -> int:
                     print(f"\n{source.name}: {message}", file=sys.stderr)
                 continue
             written = {}
+            targets = paths.free_stem_names(args.output, source.stem, list(result["outputs"]), args.format)
             for stem, name in result["outputs"].items():
-                dest = args.output / f"{source.stem} - {stem}.{args.format}"
-                shutil.move(Path(work) / name, dest)
-                written[stem] = str(dest)
+                shutil.move(Path(work) / name, targets[stem])
+                written[stem] = str(targets[stem])
         if args.json:
             print(json.dumps({"file": str(source), "outputs": written}), flush=True)
         else:

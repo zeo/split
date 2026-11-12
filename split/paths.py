@@ -113,6 +113,15 @@ def readable_size(size: float) -> str:
     return f"{size / 1e9:.1f} GB" if size >= 1e9 else f"{max(1, round(size / 1e6))} MB"
 
 
+def free_stem_names(folder: Path, name: str, stems: list[str], fmt: str) -> dict[str, Path]:
+    """Where each stem lands as "name - stem.fmt", numbering the name until nothing would be overwritten."""
+    base, number = name, 1
+    while any((folder / f"{base} - {stem}.{fmt}").exists() for stem in stems):
+        number += 1
+        base = f"{name} ({number})"
+    return {stem: folder / f"{base} - {stem}.{fmt}" for stem in stems}
+
+
 def require_space(folder: Path, needed: int, purpose: str) -> None:
     free = shutil.disk_usage(folder).free
     if free < needed:

@@ -105,6 +105,11 @@ def test_path_job_round_trip(client, tmp_path):
     ]
     assert sorted(p.name for p in export.iterdir()) == ["My Song - drums.flac", "My Song - vocals.flac"]
     assert len(files) == 2
+    authed(client, "POST", f"/api/jobs/{job['id']}/export", json={"folder": str(export)})
+    assert sorted(p.name for p in export.iterdir())[:2] == [
+        "My Song (2) - drums.flac",
+        "My Song (2) - vocals.flac",
+    ]
 
     assert authed(client, "DELETE", f"/api/jobs/{job['id']}").json() == {"deleted": job["id"]}
     assert client.get(f"/api/jobs/{job['id']}").status_code == 404

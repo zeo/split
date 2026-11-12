@@ -15,6 +15,22 @@ def test_web_dir_has_the_ui():
     assert (paths.web_dir() / "index.html").is_file()
 
 
+def test_stem_names_are_numbered_until_nothing_is_overwritten(tmp_path):
+    first = paths.free_stem_names(tmp_path, "song", ["vocals", "drums"], "wav")
+    assert first == {"vocals": tmp_path / "song - vocals.wav", "drums": tmp_path / "song - drums.wav"}
+    first["drums"].write_bytes(b"x")
+    assert (
+        paths.free_stem_names(tmp_path, "song", ["vocals", "drums"], "wav")["vocals"].name
+        == "song (2) - vocals.wav"
+    )
+    (tmp_path / "song (2) - vocals.wav").write_bytes(b"x")
+    assert paths.free_stem_names(tmp_path, "song", ["vocals"], "wav")["vocals"].name == "song - vocals.wav"
+    assert (
+        paths.free_stem_names(tmp_path, "song", ["vocals", "drums"], "wav")["drums"].name
+        == "song (3) - drums.wav"
+    )
+
+
 def test_legacy_models_move_and_old_cache_goes(tmp_path, monkeypatch):
     legacy = tmp_path / "models_cache"
     legacy.mkdir()
