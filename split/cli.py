@@ -152,7 +152,8 @@ def _separate(args: argparse.Namespace) -> int:
             }
             try:
                 result = runner.separate(request, emit)
-            except Exception as exc:
+            # audio-separator calls sys.exit on a model it cannot load
+            except (Exception, SystemExit) as exc:
                 failures += 1
                 kind, message = classify_error(exc)
                 if args.json:

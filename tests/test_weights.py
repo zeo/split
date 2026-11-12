@@ -103,3 +103,14 @@ def test_free_space_counts_what_is_already_downloaded(monkeypatch):
 
     assert asked == [len(PAYLOAD) - 1000 + weights.SPARE]
     assert weights.missing_files(model) == []
+
+
+def test_removing_a_stopped_download_drops_its_partial_bytes(monkeypatch):
+    file = pinned()
+    model = catalog.Model("tiny", "Tiny", "me", "roformer", (file,), {"vocals": "vocals"}, "MIT", "https://x")
+    monkeypatch.setattr(weights, "MODELS", {"tiny": model})
+    part_of(file).write_bytes(PAYLOAD[:1000])
+    assert weights.status()["tiny"]["stored"] == 1000
+    weights.remove(model)
+    assert not part_of(file).exists()
+    assert weights.status()["tiny"]["stored"] == 0

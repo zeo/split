@@ -339,11 +339,15 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
         job_dir = store().job_dir(job_id)
         target = job_dir / "stems.zip"
         if not target.is_file():
-            partial = job_dir / "stems.zip.tmp"
-            with zipfile.ZipFile(partial, "w", zipfile.ZIP_STORED) as archive:
-                for stem, name in job["outputs"].items():
-                    archive.write(job_dir / name, f"{job['name']} - {stem}.{job['format']}")
-            partial.replace(target)
+            # each request builds its own archive, so two clicks never write the same file
+            partial = job_dir / f"stems.{uuid.uuid4().hex}.tmp"
+            try:
+                with zipfile.ZipFile(partial, "w", zipfile.ZIP_STORED) as archive:
+                    for stem, name in job["outputs"].items():
+                        archive.write(job_dir / name, f"{job['name']} - {stem}.{job['format']}")
+                partial.replace(target)
+            finally:
+                partial.unlink(missing_ok=True)
         return FileResponse(target, media_type="application/zip", filename=f"{job['name']} - stems.zip")
 
     @app.post("/api/jobs/{job_id}/export", dependencies=[Depends(guard)])

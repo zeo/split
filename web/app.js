@@ -942,11 +942,15 @@ function renderModels() {
       bar.innerHTML = "<span></span>";
       bar.firstChild.style.width = `${Math.round((download.fraction || 0) * 100)}%`;
       side.append(bar, actionButton("Stop", () => api.post(`/api/models/${model.id}/cancel`)));
-    } else if (model.present) {
-      side.append("Ready", actionButton("Remove", async () => { await api.remove(`/api/models/${model.id}`); await refreshCatalog(); }));
     } else {
-      if (download?.status === "error") side.append(download.error);
-      side.append(actionButton("Download", () => api.post(`/api/models/${model.id}/download`)));
+      const remove = actionButton("Remove", async () => { await api.remove(`/api/models/${model.id}`); await refreshCatalog(); });
+      if (model.present) side.append("Ready", remove);
+      else {
+        if (download?.status === "error") side.append(download.error);
+        side.append(actionButton("Download", () => api.post(`/api/models/${model.id}/download`)));
+        // a stopped download keeps its finished files and partial bytes for resuming
+        if (model.stored > 0) side.append(remove);
+      }
     }
     item.append(title, side, meta);
     if (model.note) {
@@ -1281,9 +1285,9 @@ function onSnapshot(snapshot) {
     }
   }
   renderUpdate(snapshot.update);
-  const finished = Object.entries(snapshot.downloads).some(([id, d]) => d.status === "done" && before[id]?.status !== "done");
+  const settled = Object.entries(snapshot.downloads).some(([id, d]) => d.status !== before[id]?.status && !["queued", "running"].includes(d.status));
   const jobDone = snapshot.jobs.some((j) => j.status === "done" && j.finished && Date.now() / 1000 - j.finished < 3);
-  if (finished || jobDone) refreshCatalog();
+  if (settled || jobDone) refreshCatalog();
   if ($("models-sheet").open) renderModels();
   if (state.selected && !jobById(state.selected)) state.selected = null;
   renderStage();

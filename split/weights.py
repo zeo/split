@@ -41,8 +41,10 @@ def status() -> dict[str, dict]:
     # shallow: size match is enough here, the worker hashes before it loads anything
     report = {}
     for model in MODELS.values():
-        missing = sum(f.size for f in missing_files(model, deep=False))
-        report[model.id] = {"present": missing == 0, "size": model.size, "missing": missing}
+        todo = missing_files(model, deep=False)
+        missing = sum(f.size for f in todo)
+        stored = model.size - missing + sum(_partial_size(f) for f in todo)
+        report[model.id] = {"present": missing == 0, "size": model.size, "missing": missing, "stored": stored}
     return report
 
 
@@ -119,7 +121,9 @@ def remove(model: Model) -> None:
     }
     for file in model.files:
         if file.name not in keep:
-            file_path(file).unlink(missing_ok=True)
+            with _claim(file):
+                file_path(file).unlink(missing_ok=True)
+                file_path(file).with_name(file.name + ".part").unlink(missing_ok=True)
             _forget(file)
 
 

@@ -5,6 +5,8 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- a stopped model download can be removed under Models, freeing the partial file it kept for resuming
+- two quick Zip clicks no longer collide while the archive is built, and a model that fails to load from the command line fails that song instead of ending the run
 - jobs that run on the shorter chunks a GPU memory retry left behind now say so, not only the job that ran out of memory, and the progress line switches phase as soon as the job does
 - adding a large folder, uploading or exporting no longer freezes the window while the files are scanned or copied
 - the original track no longer clips on loud masters when only some stems are kept; its level now counts toward the shared trim

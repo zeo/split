@@ -82,6 +82,24 @@ def test_cli_rejects_unknown_tier(tmp_path):
     assert cli.main(["separate", str(song), "--task", "band6", "--tier", "fast"]) == 2
 
 
+def test_cli_keeps_going_when_a_model_exits(tmp_path, monkeypatch, capsys):
+    from split import engine
+
+    class Runner:
+        def __init__(self):
+            self.device = {"name": "CPU"}
+
+        def separate(self, request, emit):
+            raise SystemExit(1)
+
+    song = tmp_path / "a.wav"
+    song.write_bytes(b"x")
+    monkeypatch.setattr(engine, "Runner", Runner)
+    monkeypatch.setattr(cli.paths, "expose_ffmpeg", lambda: None)
+    assert cli.main(["separate", str(song), "-o", str(tmp_path / "out")]) == 1
+    assert "A model failed to load" in capsys.readouterr().err
+
+
 def test_cli_parser_knows_every_task():
     parser = cli.build_parser()
     for task in catalog.TASKS:
