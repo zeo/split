@@ -15,6 +15,7 @@ import traceback
 import types
 import urllib.error
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import media, paths, weights
@@ -386,7 +387,6 @@ class Runner:
                 finals.setdefault(final, []).append(merged[stem])
 
         progress("encode", "Finishing stems")
-        outputs: dict[str, str] = {}
         peaks_dir = job_dir / "peaks"
         peaks_dir.mkdir(exist_ok=True)
         sources: dict[str, Path] = {}
@@ -399,19 +399,26 @@ class Runner:
         keep_original = request.get("original", True)
         # the original shares the trim, so it has to fit under the ceiling too
         gain = media.shared_gain([*sources.values(), *([mix] if keep_original else [])])
-        for stem, wav in sources.items():
-            name = f"{stem}.{fmt}"
-            media.encode(wav, job_dir / name, fmt, source, gain)
-            media.write_peaks(wav, peaks_dir / f"{stem}.json")
-            outputs[stem] = name
-            done += 0.25
-            progress("encode", f"Wrote {stem}")
+        outputs = {stem: f"{stem}.{fmt}" for stem in sources}
+        writes = {stem: (wav, outputs[stem], fmt) for stem, wav in sources.items()}
         original = None
         if keep_original:
             # the mix at the same trim, so switching to it in the player is level-matched and sample-aligned
             original = ORIGINAL
-            media.encode(mix, job_dir / original, "flac", source, gain)
-            media.write_peaks(mix, peaks_dir / "original.json")
+            writes["original"] = (mix, original, "flac")
+
+        def write(key: str, wav: Path, name: str, codec: str) -> str:
+            media.encode(wav, job_dir / name, codec, source, gain)
+            media.write_peaks(wav, peaks_dir / f"{key}.json")
+            return key
+
+        # each encode is its own single-threaded ffmpeg, so running them side by side cuts mp3 and flac most
+        with ThreadPoolExecutor() as pool:
+            for finished in as_completed([pool.submit(write, key, *args) for key, args in writes.items()]):
+                stem = finished.result()
+                if stem in outputs:
+                    done += 0.25
+                    progress("encode", f"Wrote {stem}")
         shutil.rmtree(work, ignore_errors=True)
         return {
             "outputs": outputs,
