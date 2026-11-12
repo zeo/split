@@ -25,6 +25,8 @@ CRASHED = "The separation process stopped unexpectedly. Try again, or pick a lig
 INTERRUPTED = "Split closed before this job finished"
 INTERNAL = "Split hit an internal error on this job."
 FINISHED = ("done", "error", "cancelled")
+# fields a running job updates many times a second
+PROGRESS = ("phase", "detail", "fraction", "phase_fraction", "duration", "device")
 
 
 def _now() -> float:
@@ -93,6 +95,7 @@ class Jobs:
         self.downloads: dict[str, dict] = {}
         self.pending: deque[tuple[str, str]] = deque()
         self.version = 0
+        self.tick = 0
         self.current: str | None = None
         self.cancel_requested = False
         self.opened: dict = {"seq": 0, "paths": [], "error": None}
@@ -135,6 +138,10 @@ class Jobs:
 
     def _changed(self) -> None:
         self.version += 1
+        self.lock.notify_all()
+
+    def _progressed(self) -> None:
+        self.tick += 1
         self.lock.notify_all()
 
     def touch(self) -> None:
@@ -263,11 +270,28 @@ class Jobs:
             self.pending.append(("download", model_id))
             self._changed()
 
-    def wait(self, version: int, timeout: float) -> int:
+    def wait(self, seen: tuple[int, int], timeout: float) -> tuple[int, int]:
+        """Block until the job list changes or progress moves; returns (version, tick)."""
         with self.lock:
-            if self.version == version:
+            if (self.version, self.tick) == seen:
                 self.lock.wait(timeout)
-            return self.version
+            return self.version, self.tick
+
+    def progress(self) -> dict:
+        """Just the moving numbers of running work, for the many updates between structural changes."""
+        with self.lock:
+            return {
+                "jobs": {
+                    key: {field: record.get(field) for field in PROGRESS}
+                    for key, record in self.records.items()
+                    if record["status"] == "running"
+                },
+                "downloads": {
+                    key: {"fraction": state["fraction"]}
+                    for key, state in self.downloads.items()
+                    if state["status"] == "running"
+                },
+            }
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -426,10 +450,10 @@ class Jobs:
 
         def on_event(event: dict) -> None:
             with self.lock:
-                for field in ("phase", "detail", "fraction", "phase_fraction", "duration", "device"):
+                for field in PROGRESS:
                     if event.get(field) is not None or field == "phase_fraction":
                         record[field] = event.get(field)
-                self._changed()
+                self._progressed()
 
         result = self._exchange(request, on_event)
         with self.lock:
@@ -463,7 +487,7 @@ class Jobs:
         def on_event(event: dict) -> None:
             with self.lock:
                 state["fraction"] = event.get("fraction") or 0.0
-                self._changed()
+                self._progressed()
 
         result = self._exchange({"kind": "download", "key": f"model:{model_id}", "model": model_id}, on_event)
         with self.lock:

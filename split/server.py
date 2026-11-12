@@ -185,14 +185,18 @@ def create_app(jobs: Jobs | None = None, token: str | None = None, updates: Upda
     @app.get("/api/events")
     async def events(request: Request) -> StreamingResponse:
         async def stream():
-            version = -1
+            seen = (-1, -1)
             while not await request.is_disconnected():
-                latest = await asyncio.to_thread(store().wait, version, 15.0)
-                if latest == version:
+                latest = await asyncio.to_thread(store().wait, seen, 15.0)
+                if latest == seen:
                     yield ": idle\n\n"
                     continue
-                version = latest
-                yield f"data: {json.dumps(snapshot())}\n\n"
+                # a full snapshot only when the list itself changed; ticks carry the running numbers
+                if latest[0] != seen[0]:
+                    yield f"data: {json.dumps(snapshot())}\n\n"
+                else:
+                    yield f"event: progress\ndata: {json.dumps(store().progress())}\n\n"
+                seen = latest
                 await asyncio.sleep(0.1)
 
         return StreamingResponse(

@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -178,3 +179,19 @@ def test_startup_trims_earlier_sessions_to_the_newest(make_jobs, tmp_path):
     later = make_jobs(root=root)
     later.start()
     assert {r["id"] for r in later.list()} == set(ids[3:])
+
+
+def test_progress_moves_the_tick_and_leaves_the_list_alone(make_jobs, tmp_path):
+    jobs = make_jobs("hang")
+    jobs.start()
+    record = jobs.submit(spec(tmp_path / "a.wav"))
+    wait_for(jobs, record["id"], statuses=("running",))
+    deadline = time.monotonic() + 5
+    while jobs.progress()["jobs"].get(record["id"], {}).get("fraction") != 0.5:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    seen = (jobs.version, jobs.tick)
+    jobs.supervisor.events.put({"type": "progress", "key": record["id"], "phase": "encode", "fraction": 0.8})
+    version, tick = jobs.wait(seen, 5.0)
+    assert version == seen[0] and tick > seen[1]
+    assert jobs.progress()["jobs"][record["id"]]["phase"] == "encode"

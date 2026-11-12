@@ -21,12 +21,14 @@ export const api = {
   remove: (url) => request("DELETE", url),
 };
 
-// one stream carries every job, download and device update as a full snapshot
-export function subscribe(onSnapshot) {
+// one stream carries a full snapshot whenever jobs, downloads or the device change,
+// and lighter progress events with the running numbers in between
+export function subscribe(onSnapshot, onProgress) {
   let source;
   const open = () => {
     source = new EventSource("/api/events");
     source.onmessage = (event) => onSnapshot(JSON.parse(event.data));
+    source.addEventListener("progress", (event) => onProgress(JSON.parse(event.data)));
     source.onerror = () => {
       source.close();
       setTimeout(open, 1500);

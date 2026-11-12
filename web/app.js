@@ -34,6 +34,7 @@ const state = {
   snapshot: { jobs: [], downloads: {}, opened: { seq: 0 } },
   selected: null,
   openedSeq: null,
+  finishedJobs: null,
   session: null,
 };
 const mixer = new Mixer({ onEnded: () => renderTransport() });
@@ -443,67 +444,82 @@ function taskLine(job) {
   return parts.filter(Boolean).join(" · ");
 }
 
+// rows persist by job id so a click that lands mid-update still reaches its button
+const jobRows = new Map();
+
+function jobRow(job) {
+  const row = document.createElement("li");
+  row.className = "job";
+  row.tabIndex = 0;
+  const dot = document.createElement("span");
+  dot.className = "job-state";
+  const name = document.createElement("span");
+  name.className = "job-name";
+  const task = document.createElement("span");
+  task.className = "job-task mono";
+  const status = document.createElement("span");
+  status.className = "job-status";
+  const bar = document.createElement("span");
+  bar.className = "bar";
+  bar.append(document.createElement("span"));
+  const text = document.createElement("span");
+  text.className = "text";
+  status.append(bar, text);
+  const actions = document.createElement("span");
+  actions.className = "job-actions";
+  row.append(dot, name, task, status, actions);
+  const pick = () => {
+    state.selected = job.id;
+    renderStage();
+  };
+  row.addEventListener("click", pick);
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target === row) pick();
+  });
+  return { row, name, task, bar, text, actions, status: null };
+}
+
+function fillJobRow(entry, job) {
+  entry.row.classList.toggle("selected", job.id === state.selected);
+  entry.row.dataset.status = job.status;
+  entry.name.textContent = job.name;
+  entry.task.textContent = taskLine(job);
+  entry.bar.classList.toggle("hidden", job.status !== "running");
+  entry.bar.firstChild.style.width = `${Math.round((job.fraction || 0) * 100)}%`;
+  entry.text.textContent = entry.text.title = jobStatusText(job);
+  if (entry.status === job.status) return;
+  entry.status = job.status;
+  entry.actions.replaceChildren(...jobActions(job).map(([label, run]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      run().catch(failed);
+    });
+    return button;
+  }));
+}
+
 function renderJobs() {
   const list = $("jobs");
   const jobs = state.snapshot.jobs;
   $("dock-count").textContent = jobs.length ? String(jobs.length) : "";
   $("clear-finished").classList.toggle("hidden", !jobs.some((j) => !["queued", "running"].includes(j.status)));
+  const live = new Set(jobs.map((j) => j.id));
+  for (const id of jobRows.keys()) if (!live.has(id)) jobRows.delete(id);
   if (!jobs.length) {
     list.innerHTML = '<li class="jobs-empty">Separated songs show up here and stay for a week.</li>';
     return;
   }
-  list.replaceChildren();
-  for (const job of jobs) {
-    const row = document.createElement("li");
-    row.className = "job" + (job.id === state.selected ? " selected" : "");
-    row.dataset.status = job.status;
-    row.tabIndex = 0;
-    const dot = document.createElement("span");
-    dot.className = "job-state";
-    const name = document.createElement("span");
-    name.className = "job-name";
-    name.textContent = job.name;
-    const task = document.createElement("span");
-    task.className = "job-task mono";
-    task.textContent = taskLine(job);
-    const status = document.createElement("span");
-    status.className = "job-status";
-    if (job.status === "running") {
-      const bar = document.createElement("span");
-      bar.className = "bar";
-      bar.innerHTML = "<span></span>";
-      bar.firstChild.style.width = `${Math.round((job.fraction || 0) * 100)}%`;
-      status.append(bar);
-    }
-    const text = document.createElement("span");
-    text.className = "text";
-    text.textContent = jobStatusText(job);
-    text.title = text.textContent;
-    status.append(text);
-    const actions = document.createElement("span");
-    actions.className = "job-actions";
-    for (const [label, run] of jobActions(job)) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = label;
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        run().catch(failed);
-      });
-      actions.append(button);
-    }
-    row.append(dot, name, task, status, actions);
-    const pick = () => {
-      state.selected = job.id;
-      state.staged = state.staged.length ? state.staged : [];
-      renderStage();
-    };
-    row.addEventListener("click", pick);
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") pick();
-    });
-    list.append(row);
-  }
+  const rows = jobs.map((job) => {
+    if (!jobRows.has(job.id)) jobRows.set(job.id, jobRow(job));
+    const entry = jobRows.get(job.id);
+    fillJobRow(entry, job);
+    return entry.row;
+  });
+  // moving a row it already holds would still drop hover and focus, so only reorder when needed
+  if (rows.length !== list.children.length || rows.some((row, i) => list.children[i] !== row)) list.replaceChildren(...rows);
 }
 
 /* main stage */
@@ -939,6 +955,7 @@ function renderModels() {
     if (download && ["queued", "running"].includes(download.status)) {
       const bar = document.createElement("span");
       bar.className = "bar";
+      bar.dataset.model = model.id;
       bar.innerHTML = "<span></span>";
       bar.firstChild.style.width = `${Math.round((download.fraction || 0) * 100)}%`;
       side.append(bar, actionButton("Stop", () => api.post(`/api/models/${model.id}/cancel`)));
@@ -1270,6 +1287,22 @@ function renderStatus(snapshot) {
   }
 }
 
+function onProgress(progress) {
+  for (const [id, fields] of Object.entries(progress.jobs)) {
+    const job = jobById(id);
+    if (!job) continue;
+    Object.assign(job, fields);
+    const entry = jobRows.get(id);
+    if (entry) fillJobRow(entry, job);
+    if (state.selected === id) renderProgress(job);
+  }
+  for (const [id, { fraction }] of Object.entries(progress.downloads)) {
+    if (state.snapshot.downloads[id]) state.snapshot.downloads[id].fraction = fraction;
+    const fill = document.querySelector(`.model-side .bar[data-model="${id}"] span`);
+    if (fill) fill.style.width = `${Math.round(fraction * 100)}%`;
+  }
+}
+
 function onSnapshot(snapshot) {
   const before = state.snapshot.downloads;
   state.snapshot = snapshot;
@@ -1286,7 +1319,10 @@ function onSnapshot(snapshot) {
   }
   renderUpdate(snapshot.update);
   const settled = Object.entries(snapshot.downloads).some(([id, d]) => d.status !== before[id]?.status && !["queued", "running"].includes(d.status));
-  const jobDone = snapshot.jobs.some((j) => j.status === "done" && j.finished && Date.now() / 1000 - j.finished < 3);
+  // a finished job may have downloaded weights; count each one once, and none from before this page loaded
+  const done = snapshot.jobs.filter((j) => j.status === "done").map((j) => j.id);
+  const jobDone = state.finishedJobs !== null && done.some((id) => !state.finishedJobs.has(id));
+  state.finishedJobs = new Set(done);
   if (settled || jobDone) refreshCatalog();
   if ($("models-sheet").open) renderModels();
   if (state.selected && !jobById(state.selected)) state.selected = null;
@@ -1313,7 +1349,7 @@ async function boot() {
   $("data-dir").textContent = system.data_dir;
   renderStage();
   if (new URLSearchParams(location.hash.slice(1)).has("still")) onSnapshot(await api.get("/api/state"));
-  else subscribe(onSnapshot);
+  else subscribe(onSnapshot, onProgress);
   whenNative(() => $("export").classList.toggle("hidden", !state.session));
   requestAnimationFrame(frame);
 }

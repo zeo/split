@@ -5,6 +5,8 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- queue buttons answer the first click while a job runs; the list now updates its rows in place, and progress travels as small updates instead of the whole job list ten times a second
+- the model list refreshes once when a job finishes, rather than on every update for three seconds after
 - `split separate --tier` also takes the labels the app shows, in any case, such as `--tier Aggressive` for denoise, and `split models` lists them
 - a stopped model download can be removed under Models, freeing the partial file it kept for resuming
 - two quick Zip clicks no longer collide while the archive is built, and a model that fails to load from the command line fails that song instead of ending the run
