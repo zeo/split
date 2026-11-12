@@ -34,17 +34,20 @@ export class Mixer {
     return this.looping && this.region ? this.region : null;
   }
 
+  // the playhead is read before the loop changes, since position() wraps by the current loop
   setRegion(start, end) {
+    const at = this.position();
     const from = Math.max(0, Math.min(start, end));
     const to = Math.min(this.duration, Math.max(start, end));
     this.region = to - from >= MIN_LOOP ? { start: from, end: to } : null;
     this.looping = Boolean(this.region);
-    this.restart();
+    this.restart(at);
   }
 
   setLooping(on) {
+    const at = this.position();
     this.looping = Boolean(on && this.region);
-    this.restart();
+    this.restart(at);
   }
 
   setReference(on) {
@@ -52,8 +55,8 @@ export class Mixer {
     this.applyGains();
   }
 
-  restart() {
-    if (this.playing) this.seek(this.position());
+  restart(at = this.position()) {
+    if (this.playing) this.seek(at);
   }
 
   ensureContext() {

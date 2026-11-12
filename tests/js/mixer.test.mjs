@@ -141,6 +141,28 @@ test("turning the loop off keeps the region for later", () => {
   assert.deepEqual(mixer.loop, { start: 5, end: 9 });
 });
 
+// play() waits on the audio context before it starts the new sources
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const restartedAt = () => started.at(-1).started.offset;
+
+test("turning a running loop off keeps the playhead where it was heard", async () => {
+  mixer.setRegion(5, 9);
+  await mixer.play();
+  mixer.context.currentTime += 6;
+  mixer.setLooping(false);
+  await settle();
+  assert.ok(Math.abs(restartedAt() - 6.96) < 1e-9, `restarted at ${restartedAt()}`);
+});
+
+test("widening a running loop keeps the playhead where it was heard", async () => {
+  mixer.setRegion(5, 9);
+  await mixer.play();
+  mixer.context.currentTime += 6;
+  mixer.setRegion(5, 12);
+  await settle();
+  assert.ok(Math.abs(restartedAt() - 6.96) < 1e-9, `restarted at ${restartedAt()}`);
+});
+
 test("playback ends at the end of the file when nothing loops", async () => {
   let ended = 0;
   mixer.onEnded = () => ended++;
