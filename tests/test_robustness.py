@@ -89,6 +89,30 @@ def test_out_of_memory_halves_the_chunk_until_the_floor():
     assert engine._shrink(types.SimpleNamespace()) is False
 
 
+def test_a_reused_shrunk_model_keeps_its_note(tmp_path, monkeypatch):
+    model = catalog.Model("tiny", "Tiny", "me", "roformer", (), {"vocals": "vocals"}, "MIT", "https://x")
+    separator = types.SimpleNamespace(
+        model_instance=types.SimpleNamespace(override_model_segment_size=True),
+        separate=lambda source: ["in_(Vocals)_tiny.wav"],
+    )
+    runner = engine.Runner.__new__(engine.Runner)
+    runner.notes = []
+    monkeypatch.setattr(runner, "_load", lambda model, out: separator)
+    assert runner._run_model(model, tmp_path / "in.wav", tmp_path, lambda n: None) == {
+        "vocals": tmp_path / "in_(Vocals)_tiny.wav"
+    }
+    assert runner.notes == [engine.SHORTER_CHUNKS]
+
+
+def test_every_phase_change_is_sent(monkeypatch):
+    sent = []
+    monkeypatch.setattr(engine.time, "monotonic", lambda: 5.0)
+    emit = engine._emitter(types.SimpleNamespace(put=sent.append), "job")
+    for phase in ("decode", "decode", "separate", "encode"):
+        emit(phase=phase, phase_fraction=0.5)
+    assert [event["phase"] for event in sent] == ["decode", "separate", "encode"]
+
+
 def test_collect_caps_huge_folders(tmp_path, monkeypatch):
     monkeypatch.setattr(media, "MAX_FILES", 2)
     for name in ("a.wav", "b.wav", "c.wav"):

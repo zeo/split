@@ -291,10 +291,12 @@ class Runner:
                         raise
                 # the failed attempt's tensors are only released once the except block has ended
                 _free_gpu()
-                if SHORTER_CHUNKS not in self.notes:
-                    self.notes.append(SHORTER_CHUNKS)
         finally:
             _Bar.sink = None
+        # a shrunk chunk sticks to the reused instance, so later jobs run short as well
+        shrunk = getattr(separator.model_instance, "override_model_segment_size", False)
+        if shrunk and SHORTER_CHUNKS not in self.notes:
+            self.notes.append(SHORTER_CHUNKS)
         stems: dict[str, Path] = {}
         for name in produced:
             path = Path(name) if Path(name).is_absolute() else out / Path(name).name
@@ -474,14 +476,16 @@ def classify_error(exc: BaseException) -> tuple[str, str]:
 
 
 def _emitter(outbox, key: str) -> Emit:
-    last = 0.0
+    last, phase = 0.0, None
 
     def emit(**event) -> None:
-        nonlocal last
+        nonlocal last, phase
         now = time.monotonic()
-        # phase boundaries always go through; chunk ticks are capped at ten a second
-        if event.get("phase") is None or event.get("phase_fraction") in (0.0, 1.0) or now - last > 0.1:
-            last = now
+        # phase changes and boundaries always go through; chunk ticks are capped at ten a second
+        current = event.get("phase")
+        boundary = current is None or current != phase or event.get("phase_fraction") in (0.0, 1.0)
+        if boundary or now - last > 0.1:
+            last, phase = now, current
             outbox.put({"type": "progress", "key": key, **event})
 
     return emit

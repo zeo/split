@@ -5,6 +5,7 @@ dates are release-tag dates.
 ## [unreleased]
 
 ### fixes
+- jobs that run on the shorter chunks a GPU memory retry left behind now say so, not only the job that ran out of memory, and the progress line switches phase as soon as the job does
 - adding a large folder, uploading or exporting no longer freezes the window while the files are scanned or copied
 - the original track no longer clips on loud masters when only some stems are kept; its level now counts toward the shared trim
 - exporting into a folder that already holds that song's stems writes "song (2) - vocals.wav" and so on instead of overwriting them, in the app and the command line
